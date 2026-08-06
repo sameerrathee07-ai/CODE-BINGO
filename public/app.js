@@ -27,6 +27,7 @@ const els = {
   btnShuffle: $('#btn-shuffle'),
   btnClear: $('#btn-clear'),
   btnReady: $('#btn-ready'),
+  btnStart: $('#btn-start'),
   ballDisplay: $('#ball-display'),
   remaining: $('#remaining'),
   tray: $('#called-tray'),
@@ -226,6 +227,7 @@ function clearSaved() { localStorage.removeItem('bingo5x5'); }
 function renderAll() {
   if (!state.room || !state.me) return;
   const isHost = state.room.hostId === state.me.id;
+  const allReady = state.room.players.every(p => p.ready);
   document.querySelectorAll('.host-only').forEach(el => { el.hidden = !isHost; });
   els.roomCode.textContent = state.room.code;
   renderPlayers();
@@ -240,6 +242,17 @@ function renderAll() {
   renderPeers();
   els.autoCall.checked = !!state.room.autoCall;
   els.btnDraw.disabled = state.room.claimWindow || state.room.balls.length >= 25;
+  els.btnStart.disabled = !allReady;
+  const mineReady = !!state.board;
+  if (state.room.phase === 'arrange') {
+    if (isHost) {
+      els.arrangeHint.textContent = allReady ? 'Everyone is ready - press Start game!' : 'Waiting for players to ready up...';
+    } else if (mineReady) {
+      els.arrangeHint.textContent = allReady ? 'Waiting for the host to start the game...' : 'Waiting for other players...';
+    } else {
+      els.arrangeHint.textContent = 'Arrange your board, then press Ready';
+    }
+  }
 }
 
 function renderPanels() {
@@ -483,6 +496,7 @@ els.btnBingo.addEventListener('click', () => {
 /* ---------- host controls ---------- */
 
 els.btnSetup.addEventListener('click', () => send({ type: 'setup' }));
+els.btnStart.addEventListener('click', () => send({ type: 'startGame' }));
 els.btnDraw.addEventListener('click', () => send({ type: 'draw' }));
 
 function sendAuto() {
@@ -565,6 +579,8 @@ async function createPeer(id) {
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'turns:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
     ],
   });
   state.localStream.getTracks().forEach(t => pc.addTrack(t, state.localStream));
