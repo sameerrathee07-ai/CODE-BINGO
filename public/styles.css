@@ -100,7 +100,7 @@ body::after {
 }
 
 .screen { display: none; max-width: 980px; margin: 0 auto; padding: 0 14px 60px; }
-.screen.active { display: block; animation: screen-in 0.45s ease; }
+.screen.active { display: block; animation: screen-in 0.22s ease; }
 @keyframes screen-in {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
@@ -112,7 +112,7 @@ body::after {
 
 /* ---------- home ---------- */
 
-.hero { text-align: center; padding: 34px 0 6px; animation: rise 0.7s ease both; }
+.hero { text-align: center; padding: 34px 0 6px; animation: rise 0.35s ease both; }
 .hero h1 {
   font-size: clamp(2.4rem, 8vw, 4rem);
   margin: 0;
@@ -130,7 +130,7 @@ body::after {
   100% { background-position: 0% 50%; }
 }
 .hero h1 span { font-size: 0.5em; vertical-align: super; letter-spacing: 0; }
-.hero .tag { color: var(--dim); margin: 10px 0 0; line-height: 1.5; animation: rise 0.7s ease 0.1s both; }
+.hero .tag { color: var(--dim); margin: 10px 0 0; line-height: 1.5; animation: rise 0.35s ease 0.05s both; }
 @keyframes rise {
   from { opacity: 0; transform: translateY(22px); }
   to { opacity: 1; transform: translateY(0); }
@@ -144,8 +144,8 @@ body::after {
   margin: 18px 0;
   display: grid;
   gap: 10px;
-  animation: rise 0.7s ease both;
-  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+  animation: rise 0.35s ease both;
+  transition: transform 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 #screen-home .card {
   background: rgba(22, 27, 39, 0.55);
@@ -170,8 +170,8 @@ body::after {
   #card-rooms { grid-template-columns: 1fr 1fr; gap: 22px; }
   #card-rooms .divider { width: 1px; height: auto; background: linear-gradient(180deg, transparent, var(--border), transparent); margin: 0; }
 }
-#screen-home .card:nth-of-type(2) { animation-delay: 0.18s; }
-#screen-home .card:nth-of-type(3) { animation-delay: 0.28s; }
+#screen-home .card:nth-of-type(2) { animation-delay: 0.08s; }
+#screen-home .card:nth-of-type(3) { animation-delay: 0.15s; }
 .card h2 { margin: 0 0 4px; font-size: 1.05rem; }
 .card.rules ol { margin: 0; padding-left: 20px; line-height: 1.7; color: var(--dim); }
 .card.rules b { color: var(--text); }
@@ -204,6 +204,12 @@ input:focus, select:focus { border-color: var(--accent); }
 .btn.primary { background: linear-gradient(180deg, #3b82f6, #2563eb); border-color: #1d4ed8; }
 .btn.primary:hover:not(:disabled) { filter: brightness(1.1); box-shadow: 0 0 20px rgba(59, 130, 246, 0.35); }
 .btn.big { padding: 14px 30px; font-size: 1.15rem; }
+.btn.done {
+  background: linear-gradient(180deg, #16a34a, #15803d);
+  border-color: #15803d;
+  opacity: 1;
+  cursor: default;
+}
 
 .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 
@@ -271,7 +277,7 @@ header {
 /* ---------- panels ---------- */
 
 .panel { display: none; margin-top: 14px; }
-.panel.active { display: block; animation: screen-in 0.35s ease; }
+.panel.active { display: block; animation: screen-in 0.2s ease; }
 .panel h2 { font-size: 1.1rem; margin: 6px 0 12px; }
 .panel.center { text-align: center; }
 .status { color: var(--dim); font-weight: 600; font-size: 0.9rem; }
@@ -413,7 +419,7 @@ header {
   font-weight: 800;
   color: var(--gold);
 }
-.ball-display.pop span { animation: pop 0.4s ease; }
+.ball-display.pop span { animation: pop 0.22s ease; }
 @keyframes pop {
   0% { transform: scale(0.3); opacity: 0; }
   60% { transform: scale(1.15); }
@@ -554,12 +560,12 @@ header {
 .result-box.win {
   border-color: var(--gold);
   box-shadow: 0 0 70px rgba(251, 191, 36, 0.45);
-  animation: pop-in 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  animation: pop-in 0.3s cubic-bezier(0.2, 1.6, 0.4, 1) both;
 }
 .result-box.lose {
   border-color: var(--red);
   box-shadow: 0 0 50px rgba(239, 68, 68, 0.3);
-  animation: fade-down 0.6s ease both;
+  animation: fade-down 0.3s ease both;
 }
 @keyframes pop-in {
   0% { transform: scale(0.2); opacity: 0; }
@@ -579,7 +585,7 @@ header {
 .result-title.win {
   color: var(--gold);
   text-shadow: 0 0 30px rgba(251, 191, 36, 0.6);
-  animation: win-glow 1.2s ease-in-out infinite alternate;
+  animation: win-glow 0.6s ease-in-out infinite alternate;
 }
 @keyframes win-glow {
   from { text-shadow: 0 0 18px rgba(251, 191, 36, 0.4); transform: scale(1); }
@@ -588,7 +594,7 @@ header {
 .result-title.lose {
   color: var(--red);
   text-shadow: 0 0 24px rgba(239, 68, 68, 0.5);
-  animation: lose-shake 0.5s ease 0.2s 2;
+  animation: lose-shake 0.25s ease 0.1s 2;
 }
 @keyframes lose-shake {
   0%, 100% { transform: translateX(0); }
@@ -617,7 +623,7 @@ header {
   text-align: center;
   font-size: 0.9rem;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-  transition: opacity 0.3s, transform 0.3s;
+  transition: opacity 0.2s, transform 0.2s;
 }
 .toast.err { border-color: var(--red); }
 .toast.warn { border-color: var(--gold); }

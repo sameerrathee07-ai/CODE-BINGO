@@ -54,6 +54,7 @@ function makePlayer(name, ws) {
     board: null,
     marks: new Set(),
     claimed: false,
+    rematch: false,
     graceTimer: null,
   };
 }
@@ -108,6 +109,7 @@ function roomState(room) {
       id: p.id,
       name: p.name,
       ready: !!p.board,
+      rematch: p.rematch,
       host: p.id === room.hostId,
       connected: p.connected,
     })),
@@ -334,8 +336,8 @@ wss.on('connection', (ws) => {
           return send(ws, { type: 'error', message: 'Not all boards ready' });
         }
         room.phase = 'playing';
-        const first = [...room.players.values()].find(x => x.connected) || [...room.players.values()][0];
-        room.turnId = first ? first.id : null;
+        const turnPool = [...room.players.values()].filter(x => x.connected);
+        room.turnId = turnPool.length ? turnPool[Math.floor(Math.random() * turnPool.length)].id : null;
         startTurnTimer(room);
         broadcastState(room);
         break;
@@ -371,8 +373,18 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'rematch': {
+        if (!player || !room || room.phase !== 'ended') return;
+        player.rematch = true;
+        broadcastState(room);
+        break;
+      }
+
       case 'newRound': {
         if (!player || !room || player.id !== room.hostId || room.phase !== 'ended') return;
+        if ([...room.players.values()].some(p => p.connected && !p.rematch)) {
+          return send(ws, { type: 'error', message: 'Waiting for all players to press Ready' });
+        }
         clearTurnTimer(room);
         room.phase = 'arrange';
         room.balls = [];
@@ -386,6 +398,7 @@ wss.on('connection', (ws) => {
         for (const p of room.players.values()) {
           p.marks = new Set();
           p.claimed = false;
+          p.rematch = false;
         }
         broadcast(room, { type: 'newRound' });
         broadcastState(room);

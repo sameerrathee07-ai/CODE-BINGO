@@ -40,6 +40,7 @@
       <li>Players take turns picking a number to <b>eliminate</b> from play - you have <b>10 seconds</b> on your turn. Eliminated numbers are marked on every board automatically.</li>
       <li>A line = 5 marked cells in a row, column or diagonal. Get <b>5 lines</b> first and hit <b>BINGO!</b></li>
       <li>If several players finish on the same call, the <b>last</b> one to hit BINGO wins.</li>
+      <li>Both players press <b>Ready</b> to start a match - and again after it ends, to play the next round.</li>
     </ol>
   </div>
 </div>
@@ -115,7 +116,8 @@
       <h2 id="winner-title">BINGO!</h2>
       <p class="dim">Claimed on the final call - the last caller wins.</p>
       <ul id="claims-list" class="player-list"></ul>
-      <button id="btn-new-round" class="btn primary host-only">New round</button>
+      <button id="btn-rematch" class="btn primary big">Ready for next round</button>
+      <button id="btn-new-round" class="btn primary host-only" disabled>New round</button>
       <p class="hint" id="end-hint">Waiting for the host...</p>
     </section>
   </main>

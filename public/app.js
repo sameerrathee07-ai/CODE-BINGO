@@ -43,6 +43,7 @@ const els = {
   claimsList: $('#claims-list'),
   endHint: $('#end-hint'),
   btnNewRound: $('#btn-new-round'),
+  btnRematch: $('#btn-rematch'),
   toasts: $('#toasts'),
   overlayReconnect: $('#overlay-reconnect'),
   bgFloats: $('#bg-floats'),
@@ -88,8 +89,8 @@ function toast(msg, type) {
   t.className = 'toast ' + (type || '');
   t.textContent = msg;
   els.toasts.appendChild(t);
-  setTimeout(() => t.classList.add('out'), 2200);
-  setTimeout(() => t.remove(), 2600);
+  setTimeout(() => t.classList.add('out'), 1400);
+  setTimeout(() => t.remove(), 1700);
 }
 
 let ac = null;
@@ -178,7 +179,7 @@ function handle(msg) {
       renderTurnStatus();
       renderPlayBoard();
       sBall();
-      setTimeout(() => renderPlayBoard(), 2500);
+      setTimeout(() => renderPlayBoard(), 900);
       break;
     case 'marks':
       state.marks.add(msg.num);
@@ -260,6 +261,7 @@ function renderAll() {
   renderArrange();
   renderPeers();
   renderTurnStatus();
+  renderEndPanel();
   els.btnStart.disabled = !allReady;
   const mineReady = !!state.board;
   if (state.room.phase === 'arrange') {
@@ -281,7 +283,6 @@ function renderPanels() {
   els.panelEnd.classList.toggle('active', ph === 'ended');
   els.lobbyHint.hidden = state.room.hostId === state.me.id;
   els.arrangeHint.hidden = state.room.hostId === state.me.id;
-  els.endHint.hidden = state.room.hostId === state.me.id;
 }
 
 function renderPlayers() {
@@ -409,6 +410,31 @@ function fillEnd(msg) {
   if (isHost) els.endHint.hidden = true;
 }
 
+function renderEndPanel() {
+  if (!state.room || !state.me) return;
+  const isHost = state.room.hostId === state.me.id;
+  const ended = state.room.phase === 'ended';
+  els.btnRematch.hidden = !ended;
+  els.btnNewRound.disabled = !ended || !isHost || !allRematch();
+  if (!ended) return;
+  const mine = state.room.players.find(p => p.id === state.me.id);
+  const meReady = !!(mine && mine.rematch);
+  els.btnRematch.disabled = meReady;
+  els.btnRematch.textContent = meReady ? 'Ready!' : 'Ready for next round';
+  els.btnRematch.classList.toggle('done', meReady);
+  const all = allRematch();
+  els.endHint.hidden = false;
+  if (isHost) {
+    els.endHint.textContent = all ? 'Everyone ready - start the next round!' : 'Waiting for everyone to press Ready...';
+  } else {
+    els.endHint.textContent = all ? 'Waiting for the host to start the next round...' : 'Press Ready to continue';
+  }
+}
+
+function allRematch() {
+  return state.room.players.every(p => p.rematch || !p.connected);
+}
+
 /* ---------- result overlay (win / lose) ---------- */
 
 let resultTimer = null;
@@ -423,7 +449,7 @@ function showResult(win, winnerName) {
   els.resultOverlay.classList.remove('hidden');
   if (win) burstConfetti();
   clearTimeout(resultTimer);
-  resultTimer = setTimeout(() => els.resultOverlay.classList.add('hidden'), 7000);
+  resultTimer = setTimeout(() => els.resultOverlay.classList.add('hidden'), 5000);
 }
 
 els.resultOverlay.addEventListener('click', () => {
@@ -567,6 +593,7 @@ els.btnBingo.addEventListener('click', () => {
 els.btnSetup.addEventListener('click', () => send({ type: 'setup' }));
 els.btnStart.addEventListener('click', () => send({ type: 'startGame' }));
 els.btnNewRound.addEventListener('click', () => send({ type: 'newRound' }));
+els.btnRematch.addEventListener('click', () => send({ type: 'rematch' }));
 
 /* ---------- turn-based elimination ---------- */
 
