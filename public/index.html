@@ -17,24 +17,27 @@
     <h1>BINGO <span>5x5</span></h1>
     <p class="tag">First to complete <b>5 lines</b> (rows, columns or diagonals) wins.<br>Simultaneous winners: <b>the last caller wins</b>.</p>  </div>
 
-  <div class="card">
-    <h2>Create a room</h2>
-    <input id="home-name" placeholder="Your name" maxlength="20" autocomplete="off">
-    <button id="btn-create" class="btn primary">Create room</button>
-  </div>
-
-  <div class="card">
-    <h2>Join a room</h2>
-    <input id="home-code" placeholder="Room code" maxlength="4" autocomplete="off">
-    <input id="home-name2" placeholder="Your name" maxlength="20" autocomplete="off">
-    <button id="btn-join" class="btn primary">Join room</button>
+  <div class="card" id="card-rooms">
+    <div class="col">
+      <h2>Create a room</h2>
+      <input id="home-name" placeholder="Host name" maxlength="20" autocomplete="off">
+      <input id="home-room-name" placeholder="Room name (optional)" maxlength="30" autocomplete="off">
+      <button id="btn-create" class="btn primary">Create room</button>
+    </div>
+    <div class="divider" aria-hidden="true"></div>
+    <div class="col">
+      <h2>Join a room</h2>
+      <input id="home-code" placeholder="Room code" maxlength="4" autocomplete="off">
+      <input id="home-name2" placeholder="Your name" maxlength="20" autocomplete="off">
+      <button id="btn-join" class="btn primary">Join room</button>
+    </div>
   </div>
 
   <div class="card rules">
     <h2>How to play</h2>
     <ol>
-      <li>Every player gets a 5x5 board with numbers 1-25 - either <b>randomly shuffled</b> or <b>arranged by hand</b>.</li>
-      <li>Players take turns picking a number to <b>eliminate</b> from play. Eliminated numbers are marked on every board automatically.</li>
+      <li>Every player gets a 5x5 board with numbers 1-25 - type them in yourself or hit <b>Shuffle</b> for a random board.</li>
+      <li>Players take turns picking a number to <b>eliminate</b> from play - you have <b>5 seconds</b> on your turn. Eliminated numbers are marked on every board automatically.</li>
       <li>A line = 5 marked cells in a row, column or diagonal. Get <b>5 lines</b> first and hit <b>BINGO!</b></li>
       <li>If several players finish on the same call, the <b>last</b> one to hit BINGO wins.</li>
     </ol>
@@ -44,7 +47,10 @@
 <div id="screen-room" class="screen">
   <header>
     <div class="brand">BINGO</div>
-    <button id="room-code" class="chip" title="Copy room code">----</button>
+    <div class="room-title">
+      <span id="room-name"></span>
+      <button id="room-code" class="chip" title="Copy room code">----</button>
+    </div>
     <div class="spacer"></div>
     <button id="btn-mic" class="icon-btn" title="Toggle microphone">MIC OFF</button>
     <button id="btn-mute" class="icon-btn" title="Mute other players">SPK</button>
@@ -63,9 +69,8 @@
 
     <section id="panel-arrange" class="panel">
       <h2>Arrange your board <span id="arrange-status" class="status"></span></h2>
-      <p class="hint">Tap a number below, then tap a cell to place it. Or hit Shuffle for a random board.</p>
+      <p class="hint">Type the numbers 1-25 into the cells (each once), or hit Shuffle for a random board.</p>
       <div id="arrange-board" class="board"></div>
-      <div id="arrange-palette" class="palette"></div>
       <div class="row">
         <button id="btn-shuffle" class="btn">Shuffle</button>
         <button id="btn-clear" class="btn">Clear</button>
@@ -83,7 +88,10 @@
           <div id="ball-display" class="ball-display"><span>-</span></div>
           <div id="remaining" class="dim"></div>
           <div id="turn-box">
-            <div id="turn-status" class="dim">Waiting for the game to start...</div>
+            <div class="turn-row">
+              <div id="turn-status" class="dim">Waiting for the game to start...</div>
+              <div id="turn-clock" class="turn-clock"></div>
+            </div>
             <div id="elim-palette" class="palette elim"></div>
           </div>
         </div>
@@ -115,6 +123,15 @@
 
 <div id="overlay-reconnect" class="overlay hidden">
   <div class="overlay-box">Reconnecting...</div>
+</div>
+
+<div id="result-overlay" class="overlay hidden">
+  <canvas id="confetti-canvas"></canvas>
+  <div class="result-box" id="result-box">
+    <div class="result-title" id="result-title">YOU WIN!</div>
+    <div class="result-sub" id="result-sub"></div>
+    <div class="result-tap">tap to dismiss</div>
+  </div>
 </div>
 
 <div id="toasts"></div>

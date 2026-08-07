@@ -9,9 +9,9 @@ Includes built-in **voice chat** (WebRTC) so players can talk while they play.
 
 ## Features
 
-- **Rooms** - create or join a game with a 4-character room code
-- **Two board modes** - manually arrange numbers by tapping, or get a random shuffle
-- **Turn-based elimination** - players take turns picking a number to remove from play; it auto-marks every board
+- **Rooms** - create or join a game with a 4-character room code; rooms have a name, and hosts set their own name
+- **Two board modes** - type numbers into cells by hand, or get a random shuffle
+- **Turn-based elimination** - players take turns picking a number to remove from play (5s time limit per turn); it auto-marks every board
 - **5-line win condition** - rows, columns, and both diagonals count
 - **Last caller wins** - simultaneous wins are resolved by claim order on the same call
 - **Server-side rules** - elimination, turn order, line counting, and claims are validated on the server

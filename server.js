@@ -13,6 +13,7 @@ const wss = new WebSocketServer({ server });
 const PORT = process.env.PORT || 3000;
 const CLAIM_WINDOW_MS = 8000;
 const RECONNECT_GRACE_MS = 60000;
+const TURN_TIMEOUT_MS = 5000;
 const MAX_PLAYERS = 12;
 
 const rooms = new Map();
@@ -27,9 +28,10 @@ function roomCode() {
   return c;
 }
 
-function freshRoom(c) {
+function freshRoom(c, roomName) {
   return {
     code: c,
+    name: roomName || null,
     players: new Map(),
     hostId: null,
     phase: 'lobby',
@@ -39,6 +41,7 @@ function freshRoom(c) {
     claims: [],
     claimTimer: null,
     turnId: null,
+    turnTimer: null,
   };
 }
 
@@ -97,6 +100,7 @@ function broadcast(room, msg) {
 function roomState(room) {
   return {
     code: room.code,
+    name: room.name,
     phase: room.phase,
     hostId: room.hostId,
     turnId: room.turnId,
@@ -153,6 +157,7 @@ function resolveClaims(room) {
 
 function openClaimWindow(room) {
   room.claimWindow = true;
+  clearTurnTimer(room);
   broadcast(room, { type: 'claimWindow', open: true });
   room.claimTimer = setTimeout(() => resolveClaims(room), CLAIM_WINDOW_MS);
 }
@@ -167,6 +172,43 @@ function advanceTurn(room) {
   room.turnId = ids[(idx + 1) % ids.length];
 }
 
+function clearTurnTimer(room) {
+  if (room.turnTimer) {
+    clearTimeout(room.turnTimer);
+    room.turnTimer = null;
+  }
+}
+
+function startTurnTimer(room) {
+  clearTurnTimer(room);
+  if (room.phase !== 'playing' || room.claimWindow || room.balls.length >= 25) return;
+  room.turnTimer = setTimeout(() => {
+    room.turnTimer = null;
+    if (room.phase !== 'playing' || room.claimWindow || room.balls.length >= 25) return;
+    const remaining = [];
+    for (let i = 1; i <= 25; i++) if (!room.balls.includes(i)) remaining.push(i);
+    if (!remaining.length) return;
+    applyElimination(room, remaining[Math.floor(Math.random() * remaining.length)], room.turnId);
+  }, TURN_TIMEOUT_MS);
+}
+
+function applyElimination(room, num, timedOutId) {
+  room.balls.push(num);
+  room.lastBall = num;
+  for (const p of room.players.values()) {
+    if (!p.board) continue;
+    p.marks.add(num);
+    const lines = playerLines(p);
+    const canClaim = !p.claimed && lines >= 5;
+    send(p.ws, { type: 'marks', num, lines, canClaim });
+  }
+  advanceTurn(room);
+  startTurnTimer(room);
+  const timedOut = timedOutId ? (room.players.get(timedOutId) || {}).name : null;
+  broadcast(room, { type: 'eliminate', num, remaining: 25 - room.balls.length, turnId: room.turnId, timedOut });
+  broadcastState(room);
+}
+
 function removePlayer(room, p) {
   if (p.graceTimer) clearTimeout(p.graceTimer);
   room.players.delete(p.id);
@@ -176,13 +218,17 @@ function removePlayer(room, p) {
     if (next) room.hostId = next.id;
   }
   if (room.players.size === 0) {
+    clearTurnTimer(room);
     if (room.claimTimer) {
       clearTimeout(room.claimTimer);
       room.claimTimer = null;
     }
     rooms.delete(room.code);
   } else {
-    if (room.phase === 'playing' && room.turnId === p.id) advanceTurn(room);
+    if (room.phase === 'playing' && room.turnId === p.id) {
+      advanceTurn(room);
+      startTurnTimer(room);
+    }
     broadcastState(room);
   }
 }
@@ -205,7 +251,9 @@ wss.on('connection', (ws) => {
         const name = cleanName(msg.name);
         if (!name) return send(ws, { type: 'error', message: 'Enter a name' });
         if (rooms.size > 200) return send(ws, { type: 'error', message: 'Too many active rooms' });
-        const r = freshRoom(roomCode());
+        const code = roomCode();
+        const r = freshRoom(code, cleanName(msg.roomName));
+        if (!r.name) r.name = 'Room ' + code;
         const p = makePlayer(name, ws);
         r.players.set(p.id, p);
         r.hostId = p.id;
@@ -288,6 +336,7 @@ wss.on('connection', (ws) => {
         room.phase = 'playing';
         const first = [...room.players.values()].find(x => x.connected) || [...room.players.values()][0];
         room.turnId = first ? first.id : null;
+        startTurnTimer(room);
         broadcastState(room);
         break;
       }
@@ -303,18 +352,7 @@ wss.on('connection', (ws) => {
         if (!Number.isInteger(num) || num < 1 || num > 25 || room.balls.includes(num)) {
           return send(ws, { type: 'error', message: 'Number already eliminated' });
         }
-        room.balls.push(num);
-        room.lastBall = num;
-        for (const p of room.players.values()) {
-          if (!p.board) continue;
-          p.marks.add(num);
-          const lines = playerLines(p);
-          const canClaim = !p.claimed && lines >= 5;
-          send(p.ws, { type: 'marks', num, lines, canClaim });
-        }
-        advanceTurn(room);
-        broadcast(room, { type: 'eliminate', num, remaining: 25 - room.balls.length, turnId: room.turnId });
-        broadcastState(room);
+        applyElimination(room, num, null);
         break;
       }
 
@@ -335,6 +373,7 @@ wss.on('connection', (ws) => {
 
       case 'newRound': {
         if (!player || !room || player.id !== room.hostId || room.phase !== 'ended') return;
+        clearTurnTimer(room);
         room.phase = 'arrange';
         room.balls = [];
         room.lastBall = null;
@@ -376,7 +415,10 @@ wss.on('connection', (ws) => {
     if (!room || !player) return;
     player.connected = false;
     player.ws = null;
-    if (room.phase === 'playing' && room.turnId === player.id) advanceTurn(room);
+    if (room.phase === 'playing' && room.turnId === player.id) {
+      advanceTurn(room);
+      startTurnTimer(room);
+    }
     broadcastState(room);
     player.graceTimer = setTimeout(() => {
       if (!player.connected && room.players.get(player.id)) removePlayer(room, player);

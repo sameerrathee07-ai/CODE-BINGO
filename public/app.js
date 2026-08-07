@@ -4,10 +4,12 @@ const els = {
   screenHome: $('#screen-home'),
   screenRoom: $('#screen-room'),
   homeName: $('#home-name'),
+  homeRoomName: $('#home-room-name'),
   homeName2: $('#home-name2'),
   homeCode: $('#home-code'),
   btnCreate: $('#btn-create'),
   btnJoin: $('#btn-join'),
+  roomName: $('#room-name'),
   roomCode: $('#room-code'),
   btnMic: $('#btn-mic'),
   btnMute: $('#btn-mute'),
@@ -21,7 +23,6 @@ const els = {
   panelGame: $('#panel-game'),
   panelEnd: $('#panel-end'),
   arrangeBoard: $('#arrange-board'),
-  arrangePalette: $('#arrange-palette'),
   arrangeStatus: $('#arrange-status'),
   arrangeHint: $('#arrange-hint'),
   btnShuffle: $('#btn-shuffle'),
@@ -32,6 +33,7 @@ const els = {
   remaining: $('#remaining'),
   tray: $('#called-tray'),
   turnStatus: $('#turn-status'),
+  turnClock: $('#turn-clock'),
   elimPalette: $('#elim-palette'),
   linesCount: $('#lines-count'),
   claimBanner: $('#claim-banner'),
@@ -44,6 +46,11 @@ const els = {
   toasts: $('#toasts'),
   overlayReconnect: $('#overlay-reconnect'),
   bgFloats: $('#bg-floats'),
+  resultOverlay: $('#result-overlay'),
+  resultBox: $('#result-box'),
+  resultTitle: $('#result-title'),
+  resultSub: $('#result-sub'),
+  confetti: $('#confetti-canvas'),
 };
 
 const state = {
@@ -55,12 +62,13 @@ const state = {
   canClaim: false,
   claimed: false,
   placed: Array(25).fill(0),
-  selectedChip: 0,
   localStream: null,
   micOn: false,
   muted: false,
   peers: new Map(),
   claimEnd: 0,
+  turnStart: 0,
+  lastTurnId: null,
 };
 
 function esc(s) {
@@ -152,13 +160,19 @@ function handle(msg) {
         showScreen('home');
         clearSaved();
       }
+      if (state.room.turnId !== state.lastTurnId) {
+        state.lastTurnId = state.room.turnId;
+        state.turnStart = Date.now();
+      }
       renderAll();
       break;
     case 'eliminate':
       if (!state.room) return;
       state.room.balls.push(msg.num);
       state.room.lastBall = msg.num;
+      if (msg.turnId && msg.turnId !== state.room.turnId) state.turnStart = Date.now();
       state.room.turnId = msg.turnId;
+      if (msg.timedOut) toast(msg.timedOut + ' ran out of time - ' + msg.num + ' was eliminated', 'warn');
       renderBall();
       renderTray();
       renderTurnStatus();
@@ -185,6 +199,7 @@ function handle(msg) {
       break;
     case 'winner':
       sWin();
+      showResult(msg.id === state.me.id, msg.name);
       fillEnd(msg);
       break;
     case 'newRound':
@@ -232,6 +247,7 @@ function renderAll() {
   const isHost = state.room.hostId === state.me.id;
   const allReady = state.room.players.every(p => p.ready);
   document.querySelectorAll('.host-only').forEach(el => { el.hidden = !isHost; });
+  els.roomName.textContent = state.room.name || state.room.code;
   els.roomCode.textContent = state.room.code;
   renderPlayers();
   renderPanels();
@@ -252,7 +268,7 @@ function renderAll() {
     } else if (mineReady) {
       els.arrangeHint.textContent = allReady ? 'Waiting for the host to start the game...' : 'Waiting for other players...';
     } else {
-      els.arrangeHint.textContent = 'Arrange your board, then press Ready';
+      els.arrangeHint.textContent = 'Type numbers 1-25 into the cells, then press Ready';
     }
   }
 }
@@ -393,6 +409,71 @@ function fillEnd(msg) {
   if (isHost) els.endHint.hidden = true;
 }
 
+/* ---------- result overlay (win / lose) ---------- */
+
+let resultTimer = null;
+
+function showResult(win, winnerName) {
+  els.resultBox.classList.toggle('win', win);
+  els.resultBox.classList.toggle('lose', !win);
+  els.resultTitle.textContent = win ? 'YOU WIN!' : 'YOU LOST';
+  els.resultTitle.classList.toggle('win', win);
+  els.resultTitle.classList.toggle('lose', !win);
+  els.resultSub.textContent = win ? 'BINGO - 5 lines complete!' : (winnerName ? winnerName + ' won this round' : 'Round over');
+  els.resultOverlay.classList.remove('hidden');
+  if (win) burstConfetti();
+  clearTimeout(resultTimer);
+  resultTimer = setTimeout(() => els.resultOverlay.classList.add('hidden'), 7000);
+}
+
+els.resultOverlay.addEventListener('click', () => {
+  els.resultOverlay.classList.add('hidden');
+});
+
+function burstConfetti() {
+  const cv = els.confetti;
+  cv.width = window.innerWidth;
+  cv.height = window.innerHeight;
+  const ctx = cv.getContext('2d');
+  const colors = ['#fbbf24', '#ef4444', '#3b82f6', '#22c55e', '#e879f9', '#38bdf8'];
+  const parts = [];
+  for (let i = 0; i < 180; i++) {
+    parts.push({
+      x: window.innerWidth / 2 + (Math.random() - 0.5) * 80,
+      y: window.innerHeight * 0.35 + (Math.random() - 0.5) * 40,
+      vx: (Math.random() - 0.5) * 16,
+      vy: -(Math.random() * 13 + 5),
+      g: 0.45 + Math.random() * 0.35,
+      s: 6 + Math.random() * 8,
+      c: colors[i % colors.length],
+      r: Math.random() * Math.PI,
+      vr: (Math.random() - 0.5) * 0.35,
+    });
+  }
+  let last = performance.now();
+  (function frame(now) {
+    const dt = Math.min(2.5, (now - last) / 16);
+    last = now;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    let alive = false;
+    for (const p of parts) {
+      p.vy += p.g * 0.3 * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.r += p.vr * dt;
+      if (p.y < cv.height + 40) alive = true;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.r);
+      ctx.fillStyle = p.c;
+      ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s * 0.6);
+      ctx.restore();
+    }
+    if (alive) requestAnimationFrame(frame);
+    else ctx.clearRect(0, 0, cv.width, cv.height);
+  })(performance.now());
+}
+
 function renderPeers() {
   els.peers.innerHTML = '';
   for (const p of state.room.players || []) {
@@ -410,40 +491,38 @@ function renderArrange() {
   const active = state.room.phase === 'arrange';
   els.arrangeBoard.innerHTML = '';
   for (let i = 0; i < 25; i++) {
-    const cell = document.createElement('button');
-    cell.type = 'button';
-    cell.className = 'cell' + (state.placed[i] ? '' : ' empty');
-    cell.textContent = state.placed[i] || '';
-    if (active) cell.addEventListener('click', () => placeAt(i));
-    else cell.disabled = true;
+    const cell = document.createElement('input');
+    cell.type = 'number';
+    cell.min = '1';
+    cell.max = '25';
+    cell.inputMode = 'numeric';
+    cell.className = 'cell-input' + (state.placed[i] ? '' : ' empty');
+    cell.value = state.placed[i] || '';
+    cell.disabled = !active;
+    cell.addEventListener('input', () => {
+      const v = parseInt(cell.value, 10);
+      state.placed[i] = (Number.isInteger(v) && v >= 1 && v <= 25) ? v : 0;
+      updateArrangeStatus();
+    });
     els.arrangeBoard.appendChild(cell);
   }
-  els.arrangePalette.innerHTML = '';
-  const used = new Set(state.placed.filter(Boolean));
-  for (let n = 1; n <= 25; n++) {
-    const chip = document.createElement('button');
-    chip.type = 'button';
-    chip.className = 'chip' + (used.has(n) ? ' used' : '') + (state.selectedChip === n ? ' selected' : '');
-    chip.textContent = n;
-    chip.disabled = used.has(n) || !active;
-    if (active && !used.has(n)) {
-      chip.addEventListener('click', () => {
-        state.selectedChip = state.selectedChip === n ? 0 : n;
-        renderArrange();
-      });
-    }
-    els.arrangePalette.appendChild(chip);
-  }
-  const count = state.placed.filter(Boolean).length;
-  els.arrangeStatus.textContent = count + ' / 25 placed';
-  els.btnReady.disabled = count !== 25;
+  updateArrangeStatus();
 }
 
-function placeAt(i) {
-  if (!state.selectedChip || state.placed[i]) return;
-  state.placed[i] = state.selectedChip;
-  state.selectedChip = 0;
-  renderArrange();
+function updateArrangeStatus() {
+  const counts = new Map();
+  for (const v of state.placed) if (v) counts.set(v, (counts.get(v) || 0) + 1);
+  const count = state.placed.filter(Boolean).length;
+  const complete = count === 25;
+  const unique = [...counts.values()].every(n => n === 1);
+  const invalid = complete && !unique;
+  const children = els.arrangeBoard.children;
+  for (let i = 0; i < children.length; i++) {
+    const v = state.placed[i];
+    children[i].classList.toggle('dup', !!v && counts.get(v) > 1);
+  }
+  els.arrangeStatus.textContent = count + ' / 25 placed' + (invalid ? ' - each number only once!' : '');
+  els.btnReady.disabled = !(complete && unique);
 }
 
 els.btnShuffle.addEventListener('click', () => {
@@ -458,12 +537,16 @@ els.btnShuffle.addEventListener('click', () => {
 
 els.btnClear.addEventListener('click', () => {
   state.placed = Array(25).fill(0);
-  state.selectedChip = 0;
   renderArrange();
 });
 
 els.btnReady.addEventListener('click', () => {
-  if (state.placed.filter(Boolean).length !== 25) return;
+  const counts = new Map();
+  for (const v of state.placed) if (v) counts.set(v, (counts.get(v) || 0) + 1);
+  if (state.placed.filter(Boolean).length !== 25 || [...counts.values()].some(n => n !== 1)) {
+    toast('Board must have numbers 1-25 each once', 'err');
+    return;
+  }
   send({ type: 'setBoard', numbers: state.placed.slice() });
   toast('Board saved');
 });
@@ -499,8 +582,29 @@ function renderTurnStatus() {
     els.turnStatus.textContent = 'Waiting for the game to start...';
   }
   els.turnStatus.classList.toggle('mine', isMe && state.room.phase === 'playing');
+  updateTurnClock();
   renderElimPalette();
 }
+
+function updateTurnClock() {
+  if (!state.room || !state.me) {
+    els.turnClock.textContent = '';
+    return;
+  }
+  const inPlay = state.room.phase === 'playing' && !state.room.claimWindow;
+  if (!inPlay || !state.room.turnId) {
+    els.turnClock.textContent = '';
+    return;
+  }
+  const left = Math.max(0, Math.ceil(5 - (Date.now() - state.turnStart) / 1000));
+  els.turnClock.textContent = left + 's';
+  els.turnClock.classList.toggle('urgent', left <= 1);
+}
+
+setInterval(() => {
+  if (!state.room || state.room.phase !== 'playing' || state.room.claimWindow) return;
+  updateTurnClock();
+}, 250);
 
 function renderElimPalette() {
   if (!state.room || !state.me) return;
@@ -526,8 +630,8 @@ function renderElimPalette() {
 function create() {
   const name = els.homeName.value.trim();
   if (!name) { toast('Enter a name', 'err'); return; }
-  save({ code: '', name });
-  send({ type: 'createRoom', name });
+  save({ code: '', name, roomName: els.homeRoomName.value.trim() });
+  send({ type: 'createRoom', name, roomName: els.homeRoomName.value.trim() });
 }
 
 function join() {
@@ -732,7 +836,7 @@ function spawnFloaters() {
     el.style.top = (Math.random() * 96) + '%';
     el.style.animationDuration = (10 + Math.random() * 16) + 's';
     el.style.animationDelay = (-Math.random() * 22) + 's';
-    el.style.opacity = (0.10 + Math.random() * 0.16).toFixed(2);
+    el.style.opacity = (0.16 + Math.random() * 0.22).toFixed(2);
     wrap.appendChild(el);
   }
 }
@@ -749,6 +853,7 @@ const saved = loadSaved();
 if (saved) {
   els.homeName.value = saved.name;
   els.homeName2.value = saved.name;
+  if (saved.roomName) els.homeRoomName.value = saved.roomName;
   if (saved.code) els.homeCode.value = saved.code;
 }
 
