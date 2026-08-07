@@ -48,6 +48,57 @@ body::after {
   to { transform: translate(60px, 40px) scale(1.18); }
 }
 
+/* floating game elements */
+#bg-floats {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.fl {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+  animation: float-bob ease-in-out infinite alternate;
+  will-change: transform;
+}
+.fl-ball {
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, #2a3550, #131a2b);
+  border: 1.5px solid var(--border);
+  color: var(--gold);
+  text-shadow: 0 0 14px rgba(251, 191, 36, 0.45);
+}
+.fl-tile {
+  border-radius: 12px;
+  background: var(--panel2);
+  border: 1.5px solid var(--border);
+  color: var(--accent);
+  text-shadow: 0 0 14px rgba(59, 130, 246, 0.5);
+}
+.fl-letter {
+  color: rgba(251, 191, 36, 0.65);
+  font-weight: 900;
+  -webkit-text-stroke: 1px rgba(38, 48, 65, 0.8);
+  text-shadow: 0 0 20px rgba(251, 191, 36, 0.35);
+}
+.fl-mark {
+  font-weight: 900;
+  color: rgba(34, 197, 94, 0.45);
+  text-shadow: 0 0 18px rgba(34, 197, 94, 0.4);
+}
+.fl-game, .fl-dice {
+  filter: grayscale(1) opacity(0.55);
+}
+@keyframes float-bob {
+  from { transform: translateY(-30px) rotate(-10deg); }
+  to { transform: translateY(30px) rotate(10deg); }
+}
+
 .screen { display: none; max-width: 980px; margin: 0 auto; padding: 0 14px 60px; }
 .screen.active { display: block; animation: screen-in 0.45s ease; }
 @keyframes screen-in {
@@ -444,7 +495,7 @@ header {
 /* ---------- reduced motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
-  body::before, body::after { animation: none; }
+  body::before, body::after, .fl { animation: none; }
   .hero h1, .hero .tag, .screen.active, .panel.active, .card { animation: none; }
   .cell:active { transform: none; }
 }

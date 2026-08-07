@@ -44,6 +44,7 @@ const els = {
   btnNewRound: $('#btn-new-round'),
   toasts: $('#toasts'),
   overlayReconnect: $('#overlay-reconnect'),
+  bgFloats: $('#bg-floats'),
 };
 
 const state = {
@@ -655,6 +656,58 @@ els.btnMute.addEventListener('click', () => {
   els.btnMute.classList.toggle('off', state.muted);
 });
 
+/* ---------- background floaters ---------- */
+
+function spawnFloaters() {
+  const wrap = els.bgFloats;
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const letters = ['B', 'I', 'N', 'G', 'O'];
+  const types = ['fl-ball', 'fl-ball', 'fl-tile', 'fl-tile', 'fl-letter', 'fl-letter', 'fl-mark', 'fl-mark', 'fl-game', 'fl-dice'];
+  const count = Math.min(18, Math.max(9, Math.floor(window.innerWidth / 85)));
+  for (let i = 0; i < count; i++) {
+    const cls = types[i % types.length];
+    const el = document.createElement('div');
+    el.className = 'fl ' + cls;
+    const size = 26 + Math.random() * 46;
+    if (cls === 'fl-ball') {
+      el.textContent = 1 + Math.floor(Math.random() * 25);
+      el.style.width = size + 'px';
+      el.style.height = size + 'px';
+      el.style.fontSize = Math.round(size * 0.45) + 'px';
+    } else if (cls === 'fl-tile') {
+      el.textContent = 1 + Math.floor(Math.random() * 25);
+      el.style.width = size + 'px';
+      el.style.height = size + 'px';
+      el.style.fontSize = Math.round(size * 0.4) + 'px';
+    } else if (cls === 'fl-letter') {
+      el.textContent = letters[Math.floor(Math.random() * 5)];
+      el.style.fontSize = size + 'px';
+    } else if (cls === 'fl-mark') {
+      el.textContent = Math.random() < 0.5 ? 'X' : 'O';
+      el.style.fontSize = size + 'px';
+    } else if (cls === 'fl-game') {
+      el.textContent = '\u{1F3AE}';
+      el.style.fontSize = size + 'px';
+    } else {
+      el.textContent = '\u{1F3B2}';
+      el.style.fontSize = size + 'px';
+    }
+    el.style.left = (Math.random() * 96) + '%';
+    el.style.top = (Math.random() * 96) + '%';
+    el.style.animationDuration = (10 + Math.random() * 16) + 's';
+    el.style.animationDelay = (-Math.random() * 22) + 's';
+    el.style.opacity = (0.10 + Math.random() * 0.16).toFixed(2);
+    wrap.appendChild(el);
+  }
+}
+
+let resizeT = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeT);
+  resizeT = setTimeout(spawnFloaters, 300);
+});
+
 /* ---------- init ---------- */
 
 const saved = loadSaved();
@@ -664,4 +717,5 @@ if (saved) {
   if (saved.code) els.homeCode.value = saved.code;
 }
 
+spawnFloaters();
 connect();
