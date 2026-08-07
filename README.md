@@ -19,27 +19,6 @@ Includes built-in **voice chat** (WebRTC) so players can talk while they play.
 - **Mobile + desktop** - touch-friendly responsive UI, works in any browser
 - **Reconnect support** - players rejoin automatically if the connection drops
 
-## Requirements
-
-- Node.js 18+
-- npm
-
-## Install & Run
-
-```
-npm install
-npm start
-```
-
-Open http://localhost:3000 in your browser.
-
-If port 3000 is busy, pick another one:
-
-```
-set PORT=3456 && npm start
-```
-
-Then open http://localhost:3456.
 
 ## How to Play
 
