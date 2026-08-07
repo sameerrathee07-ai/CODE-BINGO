@@ -31,9 +31,8 @@ const els = {
   ballDisplay: $('#ball-display'),
   remaining: $('#remaining'),
   tray: $('#called-tray'),
-  btnDraw: $('#btn-draw'),
-  autoCall: $('#auto-call'),
-  autoInterval: $('#auto-interval'),
+  turnStatus: $('#turn-status'),
+  elimPalette: $('#elim-palette'),
   linesCount: $('#lines-count'),
   claimBanner: $('#claim-banner'),
   btnBingo: $('#btn-bingo'),
@@ -155,12 +154,14 @@ function handle(msg) {
       }
       renderAll();
       break;
-    case 'ball':
+    case 'eliminate':
       if (!state.room) return;
       state.room.balls.push(msg.num);
       state.room.lastBall = msg.num;
+      state.room.turnId = msg.turnId;
       renderBall();
       renderTray();
+      renderTurnStatus();
       renderPlayBoard();
       sBall();
       setTimeout(() => renderPlayBoard(), 2500);
@@ -180,6 +181,7 @@ function handle(msg) {
     case 'claimWindow':
       state.claimEnd = Date.now() + 8000;
       renderClaimBanner();
+      renderElimPalette();
       break;
     case 'winner':
       sWin();
@@ -196,7 +198,7 @@ function handle(msg) {
       break;
     case 'peerJoined':
       toast(msg.name + ' joined');
-      if (state.micOn) createPeer(msg.id);
+      createPeer(msg.id);
       break;
     case 'peerLeft':
       closePeer(msg.id);
@@ -241,8 +243,7 @@ function renderAll() {
   renderClaimBanner();
   renderArrange();
   renderPeers();
-  els.autoCall.checked = !!state.room.autoCall;
-  els.btnDraw.disabled = state.room.claimWindow || state.room.balls.length >= 25;
+  renderTurnStatus();
   els.btnStart.disabled = !allReady;
   const mineReady = !!state.board;
   if (state.room.phase === 'arrange') {
@@ -301,7 +302,7 @@ function renderBall() {
   void els.ballDisplay.offsetWidth;
   els.ballDisplay.classList.add('pop');
   const left = 25 - state.room.balls.length;
-  els.remaining.textContent = left > 0 ? left + ' balls left' : 'All numbers drawn';
+  els.remaining.textContent = left > 0 ? left + ' numbers left' : 'All numbers eliminated';
 }
 
 function renderTray() {
@@ -327,7 +328,6 @@ function renderPlayBoard() {
     if (marked) cell.classList.add('marked');
     else if (!called) cell.classList.add('uncalled');
     if (state.room && state.room.lastBall === num) cell.classList.add('fresh');
-    cell.addEventListener('click', () => mark(num));
     els.playBoard.appendChild(cell);
   });
 }
@@ -470,21 +470,6 @@ els.btnReady.addEventListener('click', () => {
 
 /* ---------- playing ---------- */
 
-function mark(num) {
-  if (!state.room || state.room.phase !== 'playing') return;
-  const cell = [...els.playBoard.children].find(c => Number(c.textContent) === num);
-  if (state.marks.has(num)) return;
-  if (!state.room.balls.includes(num)) {
-    if (cell) {
-      cell.classList.add('shake');
-      setTimeout(() => cell.classList.remove('shake'), 400);
-    }
-    toast('Not called yet', 'err');
-    return;
-  }
-  send({ type: 'mark', num });
-}
-
 els.btnBingo.addEventListener('click', () => {
   if (state.canClaim && !state.claimed) {
     state.claimed = true;
@@ -498,14 +483,43 @@ els.btnBingo.addEventListener('click', () => {
 
 els.btnSetup.addEventListener('click', () => send({ type: 'setup' }));
 els.btnStart.addEventListener('click', () => send({ type: 'startGame' }));
-els.btnDraw.addEventListener('click', () => send({ type: 'draw' }));
-
-function sendAuto() {
-  send({ type: 'autoCall', on: els.autoCall.checked, interval: parseInt(els.autoInterval.value, 10) });
-}
-els.autoCall.addEventListener('change', sendAuto);
-els.autoInterval.addEventListener('change', sendAuto);
 els.btnNewRound.addEventListener('click', () => send({ type: 'newRound' }));
+
+/* ---------- turn-based elimination ---------- */
+
+function renderTurnStatus() {
+  if (!state.room || !state.me) return;
+  const isMe = state.room.turnId === state.me.id;
+  const turnPlayer = state.room.players.find(p => p.id === state.room.turnId);
+  if (state.room.phase === 'playing') {
+    els.turnStatus.textContent = isMe
+      ? 'Your turn - pick a number to eliminate!'
+      : 'Waiting for ' + (turnPlayer ? turnPlayer.name : '...') + ' to eliminate a number...';
+  } else {
+    els.turnStatus.textContent = 'Waiting for the game to start...';
+  }
+  els.turnStatus.classList.toggle('mine', isMe && state.room.phase === 'playing');
+  renderElimPalette();
+}
+
+function renderElimPalette() {
+  if (!state.room || !state.me) return;
+  els.elimPalette.innerHTML = '';
+  const myTurn = state.room.turnId === state.me.id;
+  const active = state.room.phase === 'playing' && !state.room.claimWindow;
+  for (let n = 1; n <= 25; n++) {
+    const used = state.room.balls.includes(n);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'chip' + (used ? ' used' : '') + (myTurn && !used ? ' turn' : '');
+    chip.textContent = n;
+    chip.disabled = !myTurn || used || !active;
+    if (myTurn && !used && active) {
+      chip.addEventListener('click', () => send({ type: 'eliminate', num: n }));
+    }
+    els.elimPalette.appendChild(chip);
+  }
+}
 
 /* ---------- home ---------- */
 
@@ -564,18 +578,30 @@ async function toggleMic() {
   state.micOn = !state.micOn;
   state.localStream.getAudioTracks().forEach(t => { t.enabled = state.micOn; });
   updateMicBtn();
-  if (state.micOn) ensureConnections();
+  if (state.micOn) {
+    addTracksToPeers();
+    ensureConnections();
+  }
+}
+
+function addTracksToPeers() {
+  if (!state.localStream) return;
+  for (const p of state.peers.values()) {
+    if (p.pc.getSenders().length === 0) {
+      state.localStream.getTracks().forEach(t => p.pc.addTrack(t, state.localStream));
+    }
+  }
 }
 
 function ensureConnections() {
-  if (!state.room || !state.localStream) return;
+  if (!state.room) return;
   for (const p of state.room.players) {
     if (p.id !== state.me.id && !state.peers.has(p.id)) createPeer(p.id);
   }
 }
 
 async function createPeer(id) {
-  if (state.peers.has(id) || !state.localStream) return;
+  if (state.peers.has(id)) return;
   const pc = new RTCPeerConnection({
     iceServers: [
       { urls: 'stun:stun.l.google.com:19302' },
@@ -584,28 +610,37 @@ async function createPeer(id) {
       { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
     ],
   });
-  state.localStream.getTracks().forEach(t => pc.addTrack(t, state.localStream));
+  const peer = { pc, el: null, makingOffer: false };
+  if (state.localStream) {
+    state.localStream.getTracks().forEach(t => pc.addTrack(t, state.localStream));
+  }
   const el = document.createElement('audio');
   el.autoplay = true;
   el.playsInline = true;
   el.muted = state.muted;
+  peer.el = el;
   pc.ontrack = (e) => {
     el.srcObject = e.streams[0];
   };
   pc.onicecandidate = (e) => {
     if (e.candidate) send({ type: 'webrtc', to: id, payload: { ice: e.candidate } });
   };
+  pc.onnegotiationneeded = async () => {
+    if (peer.makingOffer) return;
+    peer.makingOffer = true;
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      send({ type: 'webrtc', to: id, payload: { desc: pc.localDescription } });
+    } catch (e) { }
+    peer.makingOffer = false;
+  };
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'failed' || pc.connectionState === 'closed') closePeer(id);
   };
-  state.peers.set(id, { pc, el });
+  state.peers.set(id, peer);
   document.body.appendChild(el);
   renderPeers();
-  try {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    send({ type: 'webrtc', to: id, payload: { desc: pc.localDescription } });
-  } catch (e) { }
 }
 
 function closePeer(id) {
@@ -622,7 +657,7 @@ async function onWebrtc(from, payload) {
     const type = payload.desc.type;
     let peer = state.peers.get(from);
     if (type === 'offer') {
-      if (!peer && state.localStream) await createPeer(from);
+      if (!peer) await createPeer(from);
       peer = state.peers.get(from);
       if (!peer) return;
       if (peer.pc.signalingState === 'have-local-offer') {

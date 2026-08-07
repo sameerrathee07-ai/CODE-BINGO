@@ -38,9 +38,7 @@ function freshRoom(c) {
     claimWindow: false,
     claims: [],
     claimTimer: null,
-    autoCall: false,
-    autoTimer: null,
-    autoInterval: 5000,
+    turnId: null,
   };
 }
 
@@ -101,6 +99,7 @@ function roomState(room) {
     code: room.code,
     phase: room.phase,
     hostId: room.hostId,
+    turnId: room.turnId,
     players: [...room.players.values()].map(p => ({
       id: p.id,
       name: p.name,
@@ -112,7 +111,6 @@ function roomState(room) {
     lastBall: room.lastBall,
     claimWindow: room.claimWindow,
     claims: room.claims.map(cl => ({ id: cl.id, name: cl.name })),
-    autoCall: room.autoCall,
   };
 }
 
@@ -135,36 +133,12 @@ function youMsg(room, p) {
   };
 }
 
-function drawBall(room) {
-  if (room.phase !== 'playing' || room.claimWindow || room.balls.length >= 25) return;
-  const remaining = [];
-  for (let i = 1; i <= 25; i++) if (!room.balls.includes(i)) remaining.push(i);
-  const num = remaining[Math.floor(Math.random() * remaining.length)];
-  room.balls.push(num);
-  room.lastBall = num;
-  broadcast(room, { type: 'ball', num, remaining: 25 - room.balls.length });
-}
-
-function stopAuto(room) {
-  if (room.autoTimer) {
-    clearInterval(room.autoTimer);
-    room.autoTimer = null;
-  }
-}
-
-function startAuto(room) {
-  stopAuto(room);
-  if (!room.autoCall) return;
-  room.autoTimer = setInterval(() => drawBall(room), room.autoInterval);
-}
-
 function resolveClaims(room) {
   if (room.phase !== 'playing') return;
   if (room.claimTimer) {
     clearTimeout(room.claimTimer);
     room.claimTimer = null;
   }
-  stopAuto(room);
   const winner = room.claims.length ? room.claims[room.claims.length - 1] : null;
   broadcast(room, {
     type: 'winner',
@@ -183,6 +157,16 @@ function openClaimWindow(room) {
   room.claimTimer = setTimeout(() => resolveClaims(room), CLAIM_WINDOW_MS);
 }
 
+function advanceTurn(room) {
+  const ids = [...room.players.values()].filter(p => p.connected).map(p => p.id);
+  if (!ids.length) {
+    room.turnId = null;
+    return;
+  }
+  const idx = ids.indexOf(room.turnId);
+  room.turnId = ids[(idx + 1) % ids.length];
+}
+
 function removePlayer(room, p) {
   if (p.graceTimer) clearTimeout(p.graceTimer);
   room.players.delete(p.id);
@@ -192,13 +176,13 @@ function removePlayer(room, p) {
     if (next) room.hostId = next.id;
   }
   if (room.players.size === 0) {
-    stopAuto(room);
     if (room.claimTimer) {
       clearTimeout(room.claimTimer);
       room.claimTimer = null;
     }
     rooms.delete(room.code);
   } else {
+    if (room.phase === 'playing' && room.turnId === p.id) advanceTurn(room);
     broadcastState(room);
   }
 }
@@ -302,38 +286,35 @@ wss.on('connection', (ws) => {
           return send(ws, { type: 'error', message: 'Not all boards ready' });
         }
         room.phase = 'playing';
-        broadcastState(room);
-        if (room.autoCall) startAuto(room);
-        break;
-      }
-
-      case 'draw': {
-        if (!player || !room || player.id !== room.hostId) return;
-        drawBall(room);
-        break;
-      }
-
-      case 'autoCall': {
-        if (!player || !room || player.id !== room.hostId) return;
-        room.autoCall = !!msg.on;
-        const iv = parseInt(msg.interval, 10);
-        if (iv >= 2 && iv <= 60) room.autoInterval = iv * 1000;
-        if (room.autoCall && room.phase === 'playing') startAuto(room);
-        else stopAuto(room);
+        const first = [...room.players.values()].find(x => x.connected) || [...room.players.values()][0];
+        room.turnId = first ? first.id : null;
         broadcastState(room);
         break;
       }
 
-      case 'mark': {
-        if (!player || !room || room.phase !== 'playing') return;
+      case 'eliminate': {
+        if (!player || !room || room.phase !== 'playing' || room.claimWindow) {
+          return send(ws, { type: 'error', message: 'Not in play' });
+        }
+        if (player.id !== room.turnId) {
+          return send(ws, { type: 'error', message: 'Not your turn' });
+        }
         const num = msg.num;
-        if (!player.board || !player.board.includes(num)) return;
-        if (player.marks.has(num)) return;
-        if (!room.balls.includes(num)) return send(ws, { type: 'error', message: 'Not called yet' });
-        player.marks.add(num);
-        const lines = playerLines(player);
-        const canClaim = !player.claimed && lines >= 5;
-        send(ws, { type: 'marks', num, lines, canClaim });
+        if (!Number.isInteger(num) || num < 1 || num > 25 || room.balls.includes(num)) {
+          return send(ws, { type: 'error', message: 'Number already eliminated' });
+        }
+        room.balls.push(num);
+        room.lastBall = num;
+        for (const p of room.players.values()) {
+          if (!p.board) continue;
+          p.marks.add(num);
+          const lines = playerLines(p);
+          const canClaim = !p.claimed && lines >= 5;
+          send(p.ws, { type: 'marks', num, lines, canClaim });
+        }
+        advanceTurn(room);
+        broadcast(room, { type: 'eliminate', num, remaining: 25 - room.balls.length, turnId: room.turnId });
+        broadcastState(room);
         break;
       }
 
@@ -354,7 +335,6 @@ wss.on('connection', (ws) => {
 
       case 'newRound': {
         if (!player || !room || player.id !== room.hostId || room.phase !== 'ended') return;
-        stopAuto(room);
         room.phase = 'arrange';
         room.balls = [];
         room.lastBall = null;
@@ -396,6 +376,7 @@ wss.on('connection', (ws) => {
     if (!room || !player) return;
     player.connected = false;
     player.ws = null;
+    if (room.phase === 'playing' && room.turnId === player.id) advanceTurn(room);
     broadcastState(room);
     player.graceTimer = setTimeout(() => {
       if (!player.connected && room.players.get(player.id)) removePlayer(room, player);

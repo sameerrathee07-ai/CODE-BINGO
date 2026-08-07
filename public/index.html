@@ -15,8 +15,7 @@
 <div id="screen-home" class="screen active">
   <div class="hero">
     <h1>BINGO <span>5x5</span></h1>
-    <p class="tag">First to complete <b>5 lines</b> (rows, columns or diagonals) wins.<br>Simultaneous winners: <b>the last caller wins</b>.</p>
-  </div>
+    <p class="tag">First to complete <b>5 lines</b> (rows, columns or diagonals) wins.<br>Simultaneous winners: <b>the last caller wins</b>.</p>  </div>
 
   <div class="card">
     <h2>Create a room</h2>
@@ -35,7 +34,7 @@
     <h2>How to play</h2>
     <ol>
       <li>Every player gets a 5x5 board with numbers 1-25 - either <b>randomly shuffled</b> or <b>arranged by hand</b>.</li>
-      <li>Numbers are drawn one at a time. Mark your cell when your number is called.</li>
+      <li>Players take turns picking a number to <b>eliminate</b> from play. Eliminated numbers are marked on every board automatically.</li>
       <li>A line = 5 marked cells in a row, column or diagonal. Get <b>5 lines</b> first and hit <b>BINGO!</b></li>
       <li>If several players finish on the same call, the <b>last</b> one to hit BINGO wins.</li>
     </ol>
@@ -83,19 +82,13 @@
         <div class="ball-box">
           <div id="ball-display" class="ball-display"><span>-</span></div>
           <div id="remaining" class="dim"></div>
-          <div class="host-only" id="host-controls">
-            <button id="btn-draw" class="btn primary big">Draw ball</button>
-            <label class="chk"><input type="checkbox" id="auto-call"> Auto-call</label>
-            <select id="auto-interval">
-              <option value="3">every 3s</option>
-              <option value="5" selected>every 5s</option>
-              <option value="8">every 8s</option>
-              <option value="12">every 12s</option>
-            </select>
+          <div id="turn-box">
+            <div id="turn-status" class="dim">Waiting for the game to start...</div>
+            <div id="elim-palette" class="palette elim"></div>
           </div>
         </div>
         <div class="tray-box">
-          <div class="dim tray-title">Called numbers</div>
+          <div class="dim tray-title">Eliminated numbers</div>
           <div id="called-tray" class="tray"></div>
         </div>
       </div>
