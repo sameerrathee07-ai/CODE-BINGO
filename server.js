@@ -13,7 +13,7 @@ const wss = new WebSocketServer({ server });
 const PORT = process.env.PORT || 3000;
 const CLAIM_WINDOW_MS = 8000;
 const RECONNECT_GRACE_MS = 60000;
-const TURN_TIMEOUT_MS = 5000;
+const TURN_TIMEOUT_MS = 10000;
 const MAX_PLAYERS = 12;
 
 const rooms = new Map();

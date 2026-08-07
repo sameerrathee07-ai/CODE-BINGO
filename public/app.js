@@ -596,7 +596,7 @@ function updateTurnClock() {
     els.turnClock.textContent = '';
     return;
   }
-  const left = Math.max(0, Math.ceil(5 - (Date.now() - state.turnStart) / 1000));
+  const left = Math.max(0, Math.ceil(10 - (Date.now() - state.turnStart) / 1000));
   els.turnClock.textContent = left + 's';
   els.turnClock.classList.toggle('urgent', left <= 1);
 }
