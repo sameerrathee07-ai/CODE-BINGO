@@ -83,3 +83,20 @@ public/app.js      Client logic + WebRTC voice chat
 ## Tech
 
 Node.js, Express, ws (WebSocket), vanilla JS, WebRTC.
+
+## Auto Deploy (Render)
+
+Every push to `main` auto-deploys to Render via a GitHub Actions workflow (`.github/workflows/deploy.yml`).
+
+Setup (one time):
+
+1. Get a Render API key: Render dashboard → **Account Settings** → **API Keys** → *Create API Key*.
+2. Find your service ID: Render dashboard → open your web service → copy the ID from the URL (`https://dashboard.render.com/web/srv-xxxx` → `srv-xxxx`).
+3. In GitHub → repo → **Settings → Secrets and variables → Actions → New repository secret**:
+   - `RENDER_API_KEY` = the API key from step 1
+   - `RENDER_SERVICE_ID` = the `srv-xxxx` from step 2
+
+Push to `main` (or run the workflow manually under **Actions → Deploy to Render → Run workflow**) and Render redeploys automatically.
+
+> Tip: if your Render service is already connected to the GitHub repo, you can instead enable **Auto-Deploy** in the Render service settings and skip the workflow entirely.
+

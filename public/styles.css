@@ -22,8 +22,38 @@ body {
   min-height: 100vh;
 }
 
+/* floating ambient orbs */
+body::before, body::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  border-radius: 50%;
+  filter: blur(90px);
+  pointer-events: none;
+}
+body::before {
+  width: 420px; height: 420px;
+  top: -120px; right: -120px;
+  background: rgba(59, 130, 246, 0.14);
+  animation: drift 20s ease-in-out infinite alternate;
+}
+body::after {
+  width: 360px; height: 360px;
+  bottom: -110px; left: -110px;
+  background: rgba(251, 191, 36, 0.10);
+  animation: drift 26s ease-in-out infinite alternate-reverse;
+}
+@keyframes drift {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(60px, 40px) scale(1.18); }
+}
+
 .screen { display: none; max-width: 980px; margin: 0 auto; padding: 0 14px 60px; }
-.screen.active { display: block; }
+.screen.active { display: block; animation: screen-in 0.45s ease; }
+@keyframes screen-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .hidden { display: none !important; }
 .dim { color: var(--dim); font-size: 0.85rem; }
@@ -31,18 +61,29 @@ body {
 
 /* ---------- home ---------- */
 
-.hero { text-align: center; padding: 34px 0 6px; }
+.hero { text-align: center; padding: 34px 0 6px; animation: rise 0.7s ease both; }
 .hero h1 {
   font-size: clamp(2.4rem, 8vw, 4rem);
   margin: 0;
   letter-spacing: 3px;
-  background: linear-gradient(120deg, var(--gold), var(--red));
+  background: linear-gradient(120deg, var(--gold), var(--red), var(--accent), var(--gold));
+  background-size: 300% 300%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  animation: grad-shift 7s ease infinite;
+}
+@keyframes grad-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 .hero h1 span { font-size: 0.5em; vertical-align: super; letter-spacing: 0; }
-.hero .tag { color: var(--dim); margin: 10px 0 0; line-height: 1.5; }
+.hero .tag { color: var(--dim); margin: 10px 0 0; line-height: 1.5; animation: rise 0.7s ease 0.1s both; }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .card {
   background: var(--panel);
@@ -52,7 +93,17 @@ body {
   margin: 18px 0;
   display: grid;
   gap: 10px;
+  animation: rise 0.7s ease both;
+  transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
 }
+.card:hover {
+  transform: translateY(-3px);
+  border-color: var(--accent);
+  box-shadow: 0 8px 30px rgba(59, 130, 246, 0.14);
+}
+#screen-home .card:nth-of-type(1) { animation-delay: 0.18s; }
+#screen-home .card:nth-of-type(2) { animation-delay: 0.28s; }
+#screen-home .card:nth-of-type(3) { animation-delay: 0.38s; }
 .card h2 { margin: 0 0 4px; font-size: 1.05rem; }
 .card.rules ol { margin: 0; padding-left: 20px; line-height: 1.7; color: var(--dim); }
 .card.rules b { color: var(--text); }
@@ -83,7 +134,7 @@ input:focus, select:focus { border-color: var(--accent); }
 }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn.primary { background: linear-gradient(180deg, #3b82f6, #2563eb); border-color: #1d4ed8; }
-.btn.primary:hover:not(:disabled) { filter: brightness(1.1); }
+.btn.primary:hover:not(:disabled) { filter: brightness(1.1); box-shadow: 0 0 20px rgba(59, 130, 246, 0.35); }
 .btn.big { padding: 14px 30px; font-size: 1.15rem; }
 
 .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
@@ -142,7 +193,7 @@ header {
 /* ---------- panels ---------- */
 
 .panel { display: none; margin-top: 14px; }
-.panel.active { display: block; }
+.panel.active { display: block; animation: screen-in 0.35s ease; }
 .panel h2 { font-size: 1.1rem; margin: 6px 0 12px; }
 .panel.center { text-align: center; }
 .status { color: var(--dim); font-weight: 600; font-size: 0.9rem; }
@@ -388,4 +439,12 @@ header {
 @media (min-width: 900px) {
   #panel-game.active { grid-template-columns: 340px 1fr; align-items: start; }
   .cell { font-size: 1.4rem; }
+}
+
+/* ---------- reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  body::before, body::after { animation: none; }
+  .hero h1, .hero .tag, .screen.active, .panel.active, .card { animation: none; }
+  .cell:active { transform: none; }
 }
