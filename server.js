@@ -211,6 +211,23 @@ function applyElimination(room, num, timedOutId) {
   broadcastState(room);
 }
 
+function disconnectedPlayerByName(room, name) {
+  return [...room.players.values()].find(p => p.name === name && !p.connected);
+}
+
+function reconnectPlayer(ctx, room, player, ws) {
+  if (player.graceTimer) {
+    clearTimeout(player.graceTimer);
+    player.graceTimer = null;
+  }
+  player.ws = ws;
+  player.connected = true;
+  ctx.room = room;
+  ctx.player = player;
+  send(ws, youMsg(room, player));
+  broadcastState(room);
+}
+
 function removePlayer(room, p) {
   if (p.graceTimer) clearTimeout(p.graceTimer);
   room.players.delete(p.id);
@@ -274,17 +291,13 @@ wss.on('connection', (ws) => {
         const r = rooms.get(code);
         if (!name) return send(ws, { type: 'error', message: 'Enter a name' });
         if (!r) return send(ws, { type: 'error', message: 'Room not found' });
-        if (r.phase === 'playing' || r.phase === 'ended') {
-          const existing = [...r.players.values()].find(x => x.name === name);
-          if (!existing) return send(ws, { type: 'error', message: 'Game already started' });
-          if (existing.graceTimer) clearTimeout(existing.graceTimer);
-          existing.ws = ws;
-          existing.connected = true;
-          ctx.room = r;
-          ctx.player = existing;
-          send(ws, youMsg(r, existing));
-          broadcastState(r);
+        const reconnecting = disconnectedPlayerByName(r, name);
+        if (reconnecting) {
+          reconnectPlayer(ctx, r, reconnecting, ws);
           break;
+        }
+        if (r.phase === 'playing' || r.phase === 'ended') {
+          return send(ws, { type: 'error', message: 'Game already started' });
         }
         if (r.players.size >= MAX_PLAYERS) return send(ws, { type: 'error', message: 'Room is full' });
         if ([...r.players.values()].some(x => x.name === name && x.connected)) {
