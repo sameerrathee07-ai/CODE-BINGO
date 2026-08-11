@@ -5,7 +5,8 @@
   "description": "5x5 Bingo — first to complete 5 lines wins; last caller wins ties. Real-time multiplayer web app with voice chat.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node test-battleship.js"
   },
   "dependencies": {
     "express": "^4.19.2",

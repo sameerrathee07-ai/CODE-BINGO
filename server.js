@@ -15,6 +15,13 @@ const CLAIM_WINDOW_MS = 8000;
 const RECONNECT_GRACE_MS = 60000;
 const TURN_TIMEOUT_MS = 10000;
 const MAX_PLAYERS = 12;
+const SHIP_DEFS = [
+  { name: 'Carrier', size: 5 },
+  { name: 'Battleship', size: 4 },
+  { name: 'Cruiser', size: 3 },
+  { name: 'Submarine', size: 3 },
+  { name: 'Destroyer', size: 2 },
+];
 
 const rooms = new Map();
 
@@ -28,10 +35,11 @@ function roomCode() {
   return c;
 }
 
-function freshRoom(c, roomName) {
+function freshRoom(c, roomName, game) {
   return {
     code: c,
     name: roomName || null,
+    game: game || 'bingo',
     players: new Map(),
     hostId: null,
     phase: 'lobby',
@@ -55,8 +63,15 @@ function makePlayer(name, ws) {
     marks: new Set(),
     claimed: false,
     rematch: false,
+    fleet: null,
+    shots: [],
+    hitsOnMe: new Set(),
     graceTimer: null,
   };
+}
+
+function isReady(p, game) {
+  return game === 'battleship' ? !!p.fleet : !!p.board;
 }
 
 function cleanName(name) {
@@ -102,13 +117,14 @@ function roomState(room) {
   return {
     code: room.code,
     name: room.name,
+    game: room.game,
     phase: room.phase,
     hostId: room.hostId,
     turnId: room.turnId,
     players: [...room.players.values()].map(p => ({
       id: p.id,
       name: p.name,
-      ready: !!p.board,
+      ready: isReady(p, room.game),
       rematch: p.rematch,
       host: p.id === room.hostId,
       connected: p.connected,
@@ -125,18 +141,76 @@ function broadcastState(room) {
 }
 
 function youMsg(room, p) {
+  if (room.game === 'battleship') {
+    return {
+      type: 'you',
+      id: p.id,
+      name: p.name,
+      host: p.id === room.hostId,
+      phase: room.phase,
+      game: room.game,
+      fleet: p.fleet,
+      shots: p.shots || [],
+      hitsOnMe: p.hitsOnMe ? [...p.hitsOnMe] : [],
+    };
+  }
   return {
     type: 'you',
     id: p.id,
     name: p.name,
     host: p.id === room.hostId,
     phase: room.phase,
+    game: room.game,
     board: p.board,
     marks: [...p.marks],
     lines: playerLines(p),
     canClaim: !p.claimed && playerLines(p) >= 5,
     claimed: p.claimed,
   };
+}
+
+function isStraight(cells) {
+  const rs = cells.map(c => Math.floor(c / 10));
+  const cs = cells.map(c => c % 10);
+  if (rs.every(r => r === rs[0])) {
+    const sorted = cs.slice().sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++) if (sorted[i] !== sorted[i - 1] + 1) return false;
+    return true;
+  }
+  if (cs.every(c => c === cs[0])) {
+    const sorted = rs.slice().sort((a, b) => a - b);
+    for (let i = 1; i < sorted.length; i++) if (sorted[i] !== sorted[i - 1] + 1) return false;
+    return true;
+  }
+  return false;
+}
+
+function validateFleet(ships) {
+  if (!Array.isArray(ships) || ships.length !== SHIP_DEFS.length) return null;
+  const counts = {};
+  for (const s of ships) {
+    const n = Array.isArray(s.cells) ? s.cells.length : 0;
+    counts[n] = (counts[n] || 0) + 1;
+  }
+  if (counts[5] !== 1 || counts[4] !== 1 || counts[3] !== 2 || counts[2] !== 1) return null;
+  const seen = new Set();
+  const fleet = [];
+  for (const s of ships) {
+    const cells = s.cells;
+    if (!Array.isArray(cells) || cells.length < 2 || cells.length > 5) return null;
+    for (const c of cells) {
+      if (!Number.isInteger(c) || c < 0 || c > 99 || seen.has(c)) return null;
+      seen.add(c);
+    }
+    if (!isStraight(cells)) return null;
+    const name = SHIP_DEFS.find(d => d.size === cells.length).name;
+    fleet.push({ name, cells: cells.slice(), hit: cells.map(() => false) });
+  }
+  return fleet;
+}
+
+function fleetSunk(fleet) {
+  return fleet.every(s => s.hit.every(Boolean));
 }
 
 function resolveClaims(room) {
@@ -183,14 +257,23 @@ function clearTurnTimer(room) {
 
 function startTurnTimer(room) {
   clearTurnTimer(room);
-  if (room.phase !== 'playing' || room.claimWindow || room.balls.length >= 25) return;
+  if (room.phase !== 'playing' || room.claimWindow) return;
+  if (room.game === 'bingo' && room.balls.length >= 25) return;
   room.turnTimer = setTimeout(() => {
     room.turnTimer = null;
-    if (room.phase !== 'playing' || room.claimWindow || room.balls.length >= 25) return;
-    const remaining = [];
-    for (let i = 1; i <= 25; i++) if (!room.balls.includes(i)) remaining.push(i);
-    if (!remaining.length) return;
-    applyElimination(room, remaining[Math.floor(Math.random() * remaining.length)], room.turnId);
+    if (room.phase !== 'playing' || room.claimWindow) return;
+    if (room.game === 'bingo') {
+      const remaining = [];
+      for (let i = 1; i <= 25; i++) if (!room.balls.includes(i)) remaining.push(i);
+      if (!remaining.length) return;
+      applyElimination(room, remaining[Math.floor(Math.random() * remaining.length)], room.turnId);
+    } else {
+      const skipped = room.players.get(room.turnId);
+      advanceTurn(room);
+      startTurnTimer(room);
+      broadcast(room, { type: 'turnSkipped', by: skipped ? skipped.name : null });
+      broadcastState(room);
+    }
   }, TURN_TIMEOUT_MS);
 }
 
@@ -271,7 +354,8 @@ wss.on('connection', (ws) => {
         if (!name) return send(ws, { type: 'error', message: 'Enter a name' });
         if (rooms.size > 200) return send(ws, { type: 'error', message: 'Too many active rooms' });
         const code = roomCode();
-        const r = freshRoom(code, cleanName(msg.roomName));
+        const game = msg.game === 'battleship' ? 'battleship' : 'bingo';
+        const r = freshRoom(code, cleanName(msg.roomName), game);
         if (!r.name) r.name = 'Room ' + code;
         const p = makePlayer(name, ws);
         r.players.set(p.id, p);
@@ -321,7 +405,7 @@ wss.on('connection', (ws) => {
       }
 
       case 'setBoard': {
-        if (!player || !room || room.phase !== 'arrange') {
+        if (!player || !room || room.phase !== 'arrange' || room.game === 'battleship') {
           return send(ws, { type: 'error', message: 'Not in setup phase' });
         }
         const nums = msg.numbers;
@@ -343,14 +427,82 @@ wss.on('connection', (ws) => {
         break;
       }
 
+      case 'placeShips': {
+        if (!player || !room || room.phase !== 'arrange' || room.game !== 'battleship') {
+          return send(ws, { type: 'error', message: 'Not in setup phase' });
+        }
+        const fleet = validateFleet(msg.ships);
+        if (!fleet) {
+          return send(ws, { type: 'error', message: 'Invalid ship placement' });
+        }
+        player.fleet = fleet;
+        player.shots = [];
+        player.hitsOnMe = new Set();
+        send(ws, youMsg(room, player));
+        broadcastState(room);
+        break;
+      }
+
       case 'startGame': {
         if (!player || !room || player.id !== room.hostId || room.phase !== 'arrange') return;
-        if ([...room.players.values()].some(p => !p.board)) {
+        const allReady = room.game === 'battleship'
+          ? [...room.players.values()].every(p => p.fleet)
+          : [...room.players.values()].every(p => p.board);
+        if (!allReady) {
           return send(ws, { type: 'error', message: 'Not all boards ready' });
         }
         room.phase = 'playing';
         const turnPool = [...room.players.values()].filter(x => x.connected);
         room.turnId = turnPool.length ? turnPool[Math.floor(Math.random() * turnPool.length)].id : null;
+        startTurnTimer(room);
+        broadcastState(room);
+        break;
+      }
+
+      case 'attack': {
+        if (!player || !room || room.game !== 'battleship' || room.phase !== 'playing') {
+          return send(ws, { type: 'error', message: 'Not in play' });
+        }
+        if (player.id !== room.turnId) {
+          return send(ws, { type: 'error', message: 'Not your turn' });
+        }
+        const cell = msg.cell;
+        if (!Number.isInteger(cell) || cell < 0 || cell > 99) {
+          return send(ws, { type: 'error', message: 'Invalid target' });
+        }
+        if (player.shots.some(s => s.cell === cell)) {
+          return send(ws, { type: 'error', message: 'Already fired there' });
+        }
+        const defender = [...room.players.values()].find(p => p.id !== player.id);
+        if (!defender || !defender.fleet) return;
+        let hit = false;
+        let sunk = null;
+        let sunkCells = null;
+        for (const ship of defender.fleet) {
+          const i = ship.cells.indexOf(cell);
+          if (i >= 0) {
+            ship.hit[i] = true;
+            hit = true;
+            if (ship.hit.every(Boolean)) {
+              sunk = ship.name;
+              sunkCells = ship.cells.slice();
+            }
+            break;
+          }
+        }
+        player.shots.push({ cell, hit });
+        if (hit) defender.hitsOnMe.add(cell);
+        if (hit) send(defender.ws, youMsg(room, defender));
+        send(player.ws, { type: 'shot', cell, hit, by: player.id, sunk, sunkCells });
+        broadcast(room, { type: 'shot', cell, hit, by: player.id, sunk });
+        if (fleetSunk(defender.fleet)) {
+          room.phase = 'ended';
+          clearTurnTimer(room);
+          broadcast(room, { type: 'winner', id: player.id, name: player.name, game: 'battleship' });
+          broadcastState(room);
+          return;
+        }
+        advanceTurn(room);
         startTurnTimer(room);
         broadcastState(room);
         break;
@@ -412,6 +564,9 @@ wss.on('connection', (ws) => {
           p.marks = new Set();
           p.claimed = false;
           p.rematch = false;
+          p.fleet = null;
+          p.shots = [];
+          p.hitsOnMe = new Set();
         }
         broadcast(room, { type: 'newRound' });
         broadcastState(room);
