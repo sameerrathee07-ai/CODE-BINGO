@@ -17,31 +17,70 @@
     <h1>VIBE <span>PLAY</span></h1>
     <p class="tag">Paper games, on screen — with voice and vibe.<br>Pick a game, share your room code, and get playing.</p>  </div>
 
-  <div class="card" id="card-rooms">
-    <div class="col">
-      <h2>Create a room</h2>
-      <input id="home-name" placeholder="Host name" maxlength="20" autocomplete="off">
-      <input id="home-room-name" placeholder="Room name (optional)" maxlength="30" autocomplete="off">
-      <button id="btn-create" class="btn primary">Create room</button>
-    </div>
-    <div class="divider" aria-hidden="true"></div>
-    <div class="col">
-      <h2>Join a room</h2>
-      <input id="home-code" placeholder="Room code" maxlength="4" autocomplete="off">
-      <input id="home-name2" placeholder="Your name" maxlength="20" autocomplete="off">
-      <button id="btn-join" class="btn primary">Join room</button>
-    </div>
-  </div>
+  <div class="home-layout">
+    <aside class="game-sidebar">
+      <h2>Pick your game</h2>
+      <button class="game-card selected" data-game="bingo">
+        <span class="game-icon">🔢</span>
+        <span class="game-name">Bingo</span>
+        <span class="game-desc">First to 5 lines wins</span>
+      </button>
+      <button class="game-card" data-game="battleship">
+        <span class="game-icon">⚓</span>
+        <span class="game-name">Battleship</span>
+        <span class="game-desc">Sink the enemy fleet</span>
+      </button>
+      <button class="game-card soon" data-game="connect4" disabled>
+        <span class="game-icon">🟡</span>
+        <span class="game-name">Connect Four</span>
+        <span class="soon-badge">Soon</span>
+      </button>
+      <button class="game-card soon" data-game="tictactoe" disabled>
+        <span class="game-icon">❌</span>
+        <span class="game-name">Tic Tac Toe</span>
+        <span class="soon-badge">Soon</span>
+      </button>
+      <button class="game-card soon" data-game="wordchain" disabled>
+        <span class="game-icon">🔤</span>
+        <span class="game-name">Word Chain</span>
+        <span class="soon-badge">Soon</span>
+      </button>
+    </aside>
 
-  <div class="card rules">
-    <h2>How to play</h2>
-    <ol>
-      <li>Every player gets a 5x5 board with numbers 1-25 - type them in yourself or hit <b>Shuffle</b> for a random board.</li>
-      <li>Players take turns picking a number to <b>eliminate</b> from play - you have <b>10 seconds</b> on your turn. Eliminated numbers are marked on every board automatically.</li>
-      <li>A line = 5 marked cells in a row, column or diagonal. Get <b>5 lines</b> first and hit <b>BINGO!</b></li>
-      <li>If several players finish on the same call, the <b>last</b> one to hit BINGO wins.</li>
-      <li>Both players press <b>Ready</b> to start a match - and again after it ends, to play the next round.</li>
-    </ol>
+    <div class="home-main">
+      <div class="card" id="card-rooms">
+        <div class="col">
+          <h2>Create a room</h2>
+          <input id="home-name" placeholder="Host name" maxlength="20" autocomplete="off">
+          <input id="home-room-name" placeholder="Room name (optional)" maxlength="30" autocomplete="off">
+          <button id="btn-create" class="btn primary">Create room</button>
+        </div>
+        <div class="divider" aria-hidden="true"></div>
+        <div class="col">
+          <h2>Join a room</h2>
+          <input id="home-code" placeholder="Room code" maxlength="4" autocomplete="off">
+          <input id="home-name2" placeholder="Your name" maxlength="20" autocomplete="off">
+          <button id="btn-join" class="btn primary">Join room</button>
+        </div>
+      </div>
+
+      <div class="card rules">
+        <h2>How to play <span id="rules-game-name">Bingo</span></h2>
+        <ol id="rules-list-bingo">
+          <li>Every player gets a 5x5 board with numbers 1-25 - type them in yourself or hit <b>Shuffle</b> for a random board.</li>
+          <li>Players take turns picking a number to <b>eliminate</b> from play - you have <b>10 seconds</b> on your turn. Eliminated numbers are marked on every board automatically.</li>
+          <li>A line = 5 marked cells in a row, column or diagonal. Get <b>5 lines</b> first and hit <b>BINGO!</b></li>
+          <li>If several players finish on the same call, the <b>last</b> one to hit BINGO wins.</li>
+          <li>Both players press <b>Ready</b> to start a match - and again after it ends, to play the next round.</li>
+        </ol>
+        <ol id="rules-list-battleship" class="hidden">
+          <li>Place your <b>5 ships</b> on the 10x10 sea - pick a ship, then tap the grid to place it. Rotate with <b>R</b> or the Rotate button.</li>
+          <li>You get <b>10 seconds</b> per turn to fire at the enemy grid.</li>
+          <li>A <b>hit</b> marks the cell red - sink all <b>5 ships</b> (17 cells) to win.</li>
+          <li>Take turns firing - the first player to sink the whole enemy fleet wins.</li>
+        </ol>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -83,6 +122,44 @@
       <p class="hint" id="arrange-hint">Arrange your board, then press Ready</p>
     </section>
 
+    <section id="panel-arrange-bs" class="panel">
+      <h2>Deploy your fleet <span id="bs-arrange-status" class="status"></span></h2>
+      <p class="hint">Pick a ship, then tap the sea to place it. Tap a placed ship to remove it. Rotate with <b>R</b>.</p>
+      <div id="bs-palette" class="bs-palette"></div>
+      <div class="row bs-ctrl">
+        <button id="btn-rotate" class="btn">Rotate (R)</button>
+        <button id="btn-ships-clear" class="btn">Clear all</button>
+      </div>
+      <div id="arrange-sea" class="sea"></div>
+      <div class="row">
+        <button id="btn-ships-ready" class="btn primary" disabled>Ready</button>
+      </div>
+      <div class="row host-only" id="host-start-row-bs">
+        <button id="btn-start-bs" class="btn primary big" disabled>Start game</button>
+      </div>
+      <p class="hint" id="bs-arrange-hint">Place all 5 ships, then press Ready</p>
+    </section>
+
+    <section id="panel-game-bs" class="panel">
+      <div class="bs-turn">
+        <div class="turn-row">
+          <div id="bs-turn-status" class="dim">Waiting for the game to start...</div>
+          <div id="bs-turn-clock" class="turn-clock"></div>
+        </div>
+        <div id="bs-feed" class="bs-feed"></div>
+      </div>
+      <div class="bs-grids">
+        <div class="bs-col">
+          <div class="bs-head">Enemy sea <span id="enemy-fleet-status" class="status"></span></div>
+          <div id="enemy-sea" class="sea sea-fight"></div>
+        </div>
+        <div class="bs-col">
+          <div class="bs-head">Your sea</div>
+          <div id="my-sea" class="sea sea-fight"></div>
+        </div>
+      </div>
+    </section>
+
     <section id="panel-game" class="panel">
       <div class="caller">
         <div class="ball-box">
@@ -114,7 +191,7 @@
 
     <section id="panel-end" class="panel center">
       <h2 id="winner-title">BINGO!</h2>
-      <p class="dim">Claimed on the final call - the last caller wins.</p>
+      <p class="dim" id="end-sub">Claimed on the final call - the last caller wins.</p>
       <ul id="claims-list" class="player-list"></ul>
       <button id="btn-rematch" class="btn primary big">Ready for next round</button>
       <button id="btn-new-round" class="btn primary host-only" disabled>New round</button>
