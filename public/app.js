@@ -40,7 +40,6 @@ const els = {
   btnBingo: $('#btn-bingo'),
   playBoard: $('#play-board'),
   winnerTitle: $('#winner-title'),
-  endSub: $('#end-sub'),
   claimsList: $('#claims-list'),
   endHint: $('#end-hint'),
   btnNewRound: $('#btn-new-round'),
@@ -53,35 +52,25 @@ const els = {
   resultTitle: $('#result-title'),
   resultSub: $('#result-sub'),
   confetti: $('#confetti-canvas'),
-  gameCards: [...document.querySelectorAll('.game-card')],
-  rulesGameName: $('#rules-game-name'),
-  rulesBingo: $('#rules-list-bingo'),
-  rulesBattleship: $('#rules-list-battleship'),
-  panelArrangeBs: $('#panel-arrange-bs'),
-  panelGameBs: $('#panel-game-bs'),
-  bsArrangeStatus: $('#bs-arrange-status'),
-  bsArrangeHint: $('#bs-arrange-hint'),
-  bsPalette: $('#bs-palette'),
-  btnRotate: $('#btn-rotate'),
-  btnShipsClear: $('#btn-ships-clear'),
-  btnShipsReady: $('#btn-ships-ready'),
-  btnStartBs: $('#btn-start-bs'),
-  arrangeSea: $('#arrange-sea'),
+  gameSidebar: $('#game-sidebar'),
+  arrangeBingo: $('#arrange-bingo'),
+  arrangeBs: $('#arrange-bs'),
+  arrangeBsStatus: $('#arrange-bs-status'),
+  bsFleetGrid: $('#bs-fleet-grid'),
+  bsShipList: $('#bs-ship-list'),
+  btnBsAuto: $('#btn-bs-auto'),
+  btnBsClear: $('#btn-bs-clear'),
+  btnBsReady: $('#btn-bs-ready'),
+  btnBsStart: $('#btn-bs-start'),
+  arrangeBsHint: $('#arrange-bs-hint'),
+  gameBingo: $('#game-bingo'),
+  gameBs: $('#game-bs'),
   bsTurnStatus: $('#bs-turn-status'),
   bsTurnClock: $('#bs-turn-clock'),
-  bsFeed: $('#bs-feed'),
-  enemySea: $('#enemy-sea'),
-  mySea: $('#my-sea'),
-  enemyFleetStatus: $('#enemy-fleet-status'),
+  bsOwn: $('#bs-own'),
+  bsTracking: $('#bs-tracking'),
+  endSub: $('#end-sub'),
 };
-
-const SHIP_DEFS = [
-  { name: 'Carrier', size: 5 },
-  { name: 'Battleship', size: 4 },
-  { name: 'Cruiser', size: 3 },
-  { name: 'Submarine', size: 3 },
-  { name: 'Destroyer', size: 2 },
-];
 
 const state = {
   room: null,
@@ -99,16 +88,16 @@ const state = {
   claimEnd: 0,
   turnStart: 0,
   lastTurnId: null,
-  selectedGame: 'bingo',
-  ships: null,
-  curShip: 0,
-  shipDir: 'h',
-  myFleet: null,
-  myShots: [],
-  enemyShots: new Map(),
-  sunkCells: new Set(),
-  enemySunk: [],
+  bsFleet: null,
+  bsShots: null,
+  bsHits: new Set(),
+  bsSunk: new Set(),
+  bsPlacing: null,
+  bsReady: false,
 };
+
+const BS_SIZES = [5, 4, 3, 3, 2];
+const BS_NAMES = ['Carrier', 'Battleship', 'Cruiser', 'Submarine', 'Destroyer'];
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -183,18 +172,18 @@ function handle(msg) {
   switch (msg.type) {
     case 'you':
       state.me = { id: msg.id, name: msg.name };
-      if (msg.game === 'battleship') {
-        state.myFleet = msg.fleet || null;
-        state.myShots = msg.shots || [];
-        if (msg.hitsOnMe) for (const c of msg.hitsOnMe) state.enemyShots.set(c, true);
-      } else {
-        state.board = msg.board || null;
-        state.marks = new Set(msg.marks || []);
-        state.lines = msg.lines || 0;
-        state.canClaim = !!msg.canClaim;
-        state.claimed = !!msg.claimed;
-        state.placed = msg.board ? msg.board.slice() : Array(25).fill(0);
-      }
+      state.board = msg.board || null;
+      state.marks = new Set(msg.marks || []);
+      state.lines = msg.lines || 0;
+      state.canClaim = !!msg.canClaim;
+      state.claimed = !!msg.claimed;
+      state.placed = msg.board ? msg.board.slice() : Array(25).fill(0);
+      state.bsFleet = msg.fleet || null;
+      state.bsShots = msg.shots || null;
+      state.bsHits = new Set(msg.hits || []);
+      state.bsSunk = new Set(msg.shipsSunk || []);
+      if (!state.bsPlacing) state.bsPlacing = { ship: 0, dir: 0, shipKeys: [[], [], [], [], []] };
+      state.bsReady = !!msg.fleet;
       showScreen('room');
       renderAll();
       if (state.micOn) ensureConnections();
@@ -208,6 +197,9 @@ function handle(msg) {
       if (state.room.turnId !== state.lastTurnId) {
         state.lastTurnId = state.room.turnId;
         state.turnStart = Date.now();
+      }
+      if (msg.room.phase === 'arrange' && msg.room.game === 'battleship' && !state.bsFleet) {
+        if (!state.bsPlacing) state.bsPlacing = { ship: 0, dir: 0, shipKeys: [[], [], [], [], []] };
       }
       renderAll();
       break;
@@ -233,34 +225,6 @@ function handle(msg) {
       renderLines();
       renderBingo();
       break;
-    case 'shot':
-      if (!state.room || state.room.game !== 'battleship') break;
-      if (msg.by === state.me.id) {
-        if (state.myShots.some(s => s.cell === msg.cell)) break;
-        state.myShots.push({ cell: msg.cell, hit: msg.hit });
-        if (msg.sunk) {
-          for (const c of msg.sunkCells) state.sunkCells.add(c);
-          if (state.enemySunk.indexOf(msg.sunk) < 0) state.enemySunk.push(msg.sunk);
-          feed('Sunk the enemy ' + msg.sunk + '!', true);
-          sWin();
-        } else if (msg.hit) {
-          feed('Direct hit!', false);
-        } else {
-          feed('Miss.', false);
-        }
-      } else {
-        state.enemyShots.set(msg.cell, !!msg.hit);
-        if (msg.sunk) {
-          feed('Your ' + msg.sunk + ' was sunk!', true);
-          sClaim();
-        }
-      }
-      renderBsSea();
-      renderBsTurn();
-      break;
-    case 'turnSkipped':
-      if (msg.by) toast(msg.by + ' ran out of time', 'warn');
-      break;
     case 'claim':
       toast(msg.name + ' claimed BINGO!', 'warn');
       sClaim();
@@ -276,23 +240,26 @@ function handle(msg) {
       fillEnd(msg);
       break;
     case 'newRound':
-      if (state.room && state.room.game === 'battleship') {
-        state.myFleet = null;
-        state.myShots = [];
-        state.enemyShots = new Map();
-        state.sunkCells = new Set();
-        state.enemySunk = [];
-        state.ships = null;
-        state.curShip = 0;
-      } else {
-        state.placed = state.board ? state.board.slice() : Array(25).fill(0);
-        state.marks = new Set();
-        state.lines = 0;
-        state.canClaim = false;
-        state.claimed = false;
-        state.claimEnd = 0;
-      }
+      state.placed = state.board ? state.board.slice() : Array(25).fill(0);
+      state.marks = new Set();
+      state.lines = 0;
+      state.canClaim = false;
+      state.claimed = false;
+      state.claimEnd = 0;
+      resetBsLocal();
       renderAll();
+      break;
+    case 'shot':
+      handleShot(msg);
+      break;
+    case 'skip':
+      if (msg.timedOutId) {
+        const who = state.room && state.room.players.find(p => p.id === msg.timedOutId);
+        toast((who ? who.name : 'A player') + ' ran out of time - turn passed', 'warn');
+      }
+      if (msg.turnId && msg.turnId !== state.room.turnId) state.turnStart = Date.now();
+      state.room.turnId = msg.turnId;
+      renderTurnStatus();
       break;
     case 'peerJoined':
       toast(msg.name + ' joined');
@@ -332,54 +299,63 @@ function renderAll() {
   document.querySelectorAll('.host-only').forEach(el => { el.hidden = !isHost; });
   els.roomName.textContent = state.room.name || state.room.code;
   els.roomCode.textContent = state.room.code;
+  renderSidebar();
   renderPlayers();
   renderPanels();
-  if (state.room.game === 'battleship') {
-    renderBsPalette();
-    renderBsArrange();
-    renderBsSea();
-    renderBsTurn();
-  } else {
-    renderBall();
-    renderTray();
-    renderPlayBoard();
-    renderLines();
-    renderBingo();
-    renderClaimBanner();
-    renderArrange();
-    renderTurnStatus();
-  }
+  renderBall();
+  renderTray();
+  renderPlayBoard();
+  renderLines();
+  renderBingo();
+  renderClaimBanner();
+  renderArrange();
   renderPeers();
+  renderTurnStatus();
   renderEndPanel();
+  renderBsSetup();
+  renderBsBattle();
+  const isBingo = state.room.game !== 'battleship';
   els.btnStart.disabled = !allReady;
-  els.btnStartBs.disabled = !allReady;
-  const mineReady = state.room.game === 'battleship' ? !!state.myFleet : !!state.board;
+  els.btnBsStart.disabled = !allReady;
   if (state.room.phase === 'arrange') {
     if (isHost) {
-      els.arrangeHint.textContent = allReady ? 'Everyone is ready - press Start game!' : 'Waiting for players to ready up...';
-      els.bsArrangeHint.textContent = allReady ? 'Everyone is ready - press Start game!' : 'Waiting for players to ready up...';
-    } else if (mineReady) {
-      els.arrangeHint.textContent = allReady ? 'Waiting for the host to start the game...' : 'Waiting for other players...';
-      els.bsArrangeHint.textContent = allReady ? 'Waiting for the host to start the game...' : 'Waiting for other players...';
+      if (isBingo) {
+        els.arrangeHint.textContent = allReady ? 'Everyone is ready - press Start game!' : 'Waiting for players to ready up...';
+      } else {
+        els.arrangeBsHint.textContent = allReady ? 'Everyone is ready - press Start battle!' : 'Waiting for players to ready up...';
+      }
+    } else if (isBingo) {
+      els.arrangeHint.textContent = state.placed.filter(Boolean).length === 25 ? 'Waiting for other players...' : 'Type numbers 1-25 into the cells, then press Ready';
     } else {
-      els.arrangeHint.textContent = 'Type numbers 1-25 into the cells, then press Ready';
-      els.bsArrangeHint.textContent = 'Place all 5 ships, then press Ready';
+      els.arrangeBsHint.textContent = state.bsReady ? 'Waiting for other players...' : 'Place your ships, then press Ready';
     }
   }
 }
 
 function renderPanels() {
   const ph = state.room.phase;
-  const bs = state.room.game === 'battleship';
+  const isBingo = state.room.game !== 'battleship';
   els.panelLobby.classList.toggle('active', ph === 'lobby');
-  els.panelArrange.classList.toggle('active', ph === 'arrange' && !bs);
-  els.panelGame.classList.toggle('active', ph === 'playing' && !bs);
-  els.panelArrangeBs.classList.toggle('active', ph === 'arrange' && bs);
-  els.panelGameBs.classList.toggle('active', ph === 'playing' && bs);
+  els.panelArrange.classList.toggle('active', ph === 'arrange');
+  els.panelGame.classList.toggle('active', ph === 'playing');
   els.panelEnd.classList.toggle('active', ph === 'ended');
   els.lobbyHint.hidden = state.room.hostId === state.me.id;
   els.arrangeHint.hidden = state.room.hostId === state.me.id;
-  els.bsArrangeHint.hidden = state.room.hostId === state.me.id;
+  els.arrangeBingo.classList.toggle('hidden', !isBingo);
+  els.arrangeBs.classList.toggle('hidden', isBingo);
+  els.gameBingo.classList.toggle('hidden', !isBingo);
+  els.gameBs.classList.toggle('hidden', isBingo);
+}
+
+function renderSidebar() {
+  const game = state.room.game;
+  for (const btn of els.gameSidebar.querySelectorAll('.game-btn')) {
+    const active = btn.dataset.game === game;
+    btn.classList.toggle('active', active);
+    const locked = state.room.phase !== 'lobby' || state.me.id !== state.room.hostId;
+    btn.disabled = locked;
+    btn.title = locked ? 'Only the host can change the game before setup' : '';
+  }
 }
 
 function renderPlayers() {
@@ -484,22 +460,17 @@ function renderClaimBanner() {
 
 function fillEnd(msg) {
   const isHost = state.me.id === state.room.hostId;
-  const bs = state.room.game === 'battleship';
-  els.winnerTitle.textContent = msg.name ? (bs ? msg.name + ' wins!' : 'BINGO! ' + msg.name + ' wins') : 'Round over - no winner';
-  els.endSub.textContent = bs ? 'The whole enemy fleet has been sunk.' : 'Claimed on the final call - the last caller wins.';
-  els.claimsList.innerHTML = '';
-  if (bs) {
-    const li = document.createElement('li');
-    const name = document.createElement('span');
-    name.textContent = msg.name || 'No winner';
-    li.appendChild(name);
-    const b = document.createElement('span');
-    b.className = 'badge' + (msg.id ? ' winner' : '');
-    b.textContent = msg.id ? 'WINNER' : '--';
-    if (msg.id) li.classList.add('winner');
-    li.appendChild(b);
-    els.claimsList.appendChild(li);
+  const isBingo = state.room.game !== 'battleship';
+  if (isBingo) {
+    els.winnerTitle.textContent = msg.name ? 'BINGO! ' + msg.name + ' wins' : 'Round over - no winner';
+    els.endSub.hidden = false;
   } else {
+    els.winnerTitle.textContent = msg.name ? msg.name + ' wins the battle!' : 'Battle over';
+    els.endSub.textContent = msg.name ? 'All enemy ships have been sunk.' : 'No winner';
+    els.endSub.hidden = false;
+  }
+  els.claimsList.innerHTML = '';
+  if (isBingo) {
     (msg.claims || []).forEach((c, i) => {
       const li = document.createElement('li');
       const name = document.createElement('span');
@@ -558,7 +529,7 @@ function showResult(win, winnerName) {
   els.resultTitle.classList.toggle('win', win);
   els.resultTitle.classList.toggle('lose', !win);
   els.resultSub.textContent = win
-    ? (state.room && state.room.game === 'battleship' ? 'The enemy fleet is gone!' : 'BINGO - 5 lines complete!')
+    ? (state.room && state.room.game === 'battleship' ? 'All enemy ships sunk!' : 'BINGO - 5 lines complete!')
     : (winnerName ? winnerName + ' won this round' : 'Round over');
   els.resultOverlay.classList.remove('hidden');
   if (win) burstConfetti();
@@ -691,215 +662,6 @@ els.btnReady.addEventListener('click', () => {
   toast('Board saved');
 });
 
-/* ---------- battleship ---------- */
-
-function renderBsPalette() {
-  els.bsPalette.innerHTML = '';
-  const placedIdx = new Set((state.ships || []).map(s => s.idx));
-  SHIP_DEFS.forEach((def, i) => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'bs-ship' + (state.curShip === i ? ' selected' : '') + (placedIdx.has(i) ? ' used' : '');
-    btn.disabled = state.room.phase !== 'arrange';
-    for (let k = 0; k < def.size; k++) {
-      const seg = document.createElement('span');
-      seg.className = 'seg' + (placedIdx.has(i) ? ' fill' : '');
-      btn.appendChild(seg);
-    }
-    const lab = document.createElement('span');
-    lab.className = 's-label';
-    lab.textContent = def.name;
-    btn.appendChild(lab);
-    btn.addEventListener('click', () => { state.curShip = i; renderBsPalette(); });
-    els.bsPalette.appendChild(btn);
-  });
-}
-
-function shipCells(size, dir, anchor) {
-  const r = Math.floor(anchor / 10);
-  const col = anchor % 10;
-  const cells = [];
-  for (let i = 0; i < size; i++) {
-    const nr = dir === 'h' ? r : r + i;
-    const nc = dir === 'h' ? col + i : col;
-    if (nr > 9 || nc > 9) return null;
-    cells.push(nr * 10 + nc);
-  }
-  return cells;
-}
-
-function overlaps(existing, cells) {
-  const taken = new Set((existing || []).flatMap(s => s.cells));
-  return cells.some(c => taken.has(c));
-}
-
-function renderBsArrange() {
-  if (!els.arrangeSea) return;
-  const active = state.room.phase === 'arrange';
-  const placed = new Set((state.ships || []).flatMap(s => s.cells));
-  els.arrangeSea.innerHTML = '';
-  for (let c = 0; c < 100; c++) {
-    const cell = document.createElement('button');
-    cell.type = 'button';
-    cell.className = 'sea-cell' + (placed.has(c) ? ' ship' : '');
-    cell.disabled = !active;
-    if (active) {
-      if (placed.has(c)) {
-        cell.addEventListener('click', () => {
-          const i = (state.ships || []).findIndex(s => s.cells.includes(c));
-          if (i >= 0) { state.ships.splice(i, 1); renderBsArrange(); renderBsPalette(); }
-        });
-      } else {
-        cell.addEventListener('click', () => placeShipAt(c));
-        cell.addEventListener('mouseenter', () => previewAt(c));
-        cell.addEventListener('mouseleave', clearPreview);
-      }
-    }
-    els.arrangeSea.appendChild(cell);
-  }
-  updateBsArrangeStatus();
-}
-
-function placeShipAt(c) {
-  if (state.room.phase !== 'arrange') return;
-  const def = SHIP_DEFS[state.curShip];
-  const cells = shipCells(def.size, state.shipDir, c);
-  if (!cells) { toast('Ship out of bounds', 'err'); return; }
-  const remaining = (state.ships || []).filter(s => s.idx !== state.curShip);
-  if (overlaps(remaining, cells)) { toast('Ships overlap', 'err'); return; }
-  state.ships = remaining.concat([{ idx: state.curShip, cells }]);
-  state.curShip = (state.curShip + 1) % SHIP_DEFS.length;
-  renderBsArrange();
-  renderBsPalette();
-}
-
-function previewAt(c) {
-  const def = SHIP_DEFS[state.curShip];
-  const cells = shipCells(def.size, state.shipDir, c);
-  if (!cells || overlaps(state.ships, cells)) return;
-  for (const cc of cells) {
-    const el = els.arrangeSea.children[cc];
-    if (el) el.classList.add('target');
-  }
-}
-function clearPreview() {
-  const t = els.arrangeSea.querySelectorAll('.target');
-  for (const el of t) el.classList.remove('target');
-}
-
-function updateBsArrangeStatus() {
-  const n = state.ships ? state.ships.length : 0;
-  els.bsArrangeStatus.textContent = n + ' / 5 ships';
-  els.btnShipsReady.disabled = n !== 5;
-}
-
-els.btnShipsReady.addEventListener('click', () => {
-  if (!state.ships || state.ships.length !== 5) { toast('Place all 5 ships first', 'err'); return; }
-  send({ type: 'placeShips', ships: state.ships.map(s => ({ cells: s.cells })) });
-  toast('Fleet deployed');
-});
-
-els.btnShipsClear.addEventListener('click', () => {
-  state.ships = null;
-  renderBsArrange();
-  renderBsPalette();
-});
-
-els.btnRotate.addEventListener('click', () => {
-  state.shipDir = state.shipDir === 'h' ? 'v' : 'h';
-  renderBsArrange();
-});
-
-els.btnStartBs.addEventListener('click', () => send({ type: 'startGame' }));
-
-document.addEventListener('keydown', (e) => {
-  if (getScreen() === 'room' && state.room && state.room.game === 'battleship' && state.room.phase === 'arrange' && (e.key === 'r' || e.key === 'R')) {
-    state.shipDir = state.shipDir === 'h' ? 'v' : 'h';
-    renderBsArrange();
-  }
-});
-
-function renderBsSea() {
-  renderEnemySea();
-  renderMySea();
-}
-
-function renderEnemySea() {
-  if (!els.enemySea) return;
-  const playing = state.room.phase === 'playing';
-  const myTurn = playing && state.room.turnId === state.me.id;
-  const shotMap = new Map(state.myShots.map(s => [s.cell, s.hit]));
-  els.enemySea.innerHTML = '';
-  for (let c = 0; c < 100; c++) {
-    const cell = document.createElement('button');
-    cell.type = 'button';
-    cell.className = 'sea-cell';
-    if (shotMap.has(c)) {
-      cell.classList.add(shotMap.get(c) ? 'hit' : 'miss');
-      if (state.sunkCells.has(c)) cell.classList.add('sunkcell');
-    } else if (playing && myTurn) {
-      cell.classList.add('target');
-      cell.addEventListener('click', () => fireAt(c));
-    }
-    cell.disabled = !myTurn || shotMap.has(c);
-    els.enemySea.appendChild(cell);
-  }
-  els.enemyFleetStatus.textContent = state.enemySunk.length ? state.enemySunk.join(' + ') + ' down' : '';
-}
-
-function renderMySea() {
-  if (!els.mySea) return;
-  const fleetCells = new Set();
-  if (state.myFleet) for (const s of state.myFleet) for (const c of s.cells) fleetCells.add(c);
-  els.mySea.innerHTML = '';
-  for (let c = 0; c < 100; c++) {
-    const cell = document.createElement('div');
-    cell.className = 'sea-cell' + (fleetCells.has(c) ? ' ship' : '');
-    const enemyHit = state.enemyShots.get(c);
-    if (enemyHit === true) cell.classList.add('hit');
-    else if (enemyHit === false) cell.classList.add('miss');
-    els.mySea.appendChild(cell);
-  }
-}
-
-function fireAt(c) {
-  if (state.room.game !== 'battleship' || state.room.phase !== 'playing') return;
-  if (state.room.turnId !== state.me.id) { toast('Not your turn', 'err'); return; }
-  if (state.myShots.some(s => s.cell === c)) return;
-  send({ type: 'attack', cell: c });
-}
-
-function feed(text, sink) {
-  if (!els.bsFeed) return;
-  const chip = document.createElement('div');
-  chip.className = 'feed-chip' + (sink ? ' sink' : '');
-  chip.textContent = text;
-  els.bsFeed.appendChild(chip);
-  while (els.bsFeed.children.length > 4) els.bsFeed.firstChild.remove();
-  setTimeout(() => chip.remove(), 2600);
-}
-
-function renderBsTurn() {
-  if (!state.room || !state.me) return;
-  const playing = state.room.phase === 'playing';
-  const isMe = playing && state.room.turnId === state.me.id;
-  const turnPlayer = state.room.players.find(p => p.id === state.room.turnId);
-  els.bsTurnStatus.textContent = playing
-    ? (isMe ? 'Your turn - fire!' : 'Waiting for ' + (turnPlayer ? turnPlayer.name : '...') + ' to fire...')
-    : 'Waiting for the game to start...';
-  els.bsTurnStatus.classList.toggle('mine', isMe);
-  updateBsClock();
-}
-
-function updateBsClock() {
-  if (!state.room || !state.me) { els.bsTurnClock.textContent = ''; return; }
-  const inPlay = state.room.phase === 'playing';
-  if (!inPlay || !state.room.turnId) { els.bsTurnClock.textContent = ''; return; }
-  const left = Math.max(0, Math.ceil(10 - (Date.now() - state.turnStart) / 1000));
-  els.bsTurnClock.textContent = left + 's';
-  els.bsTurnClock.classList.toggle('urgent', left <= 1);
-}
-
 /* ---------- playing ---------- */
 
 els.btnBingo.addEventListener('click', () => {
@@ -915,46 +677,257 @@ els.btnBingo.addEventListener('click', () => {
 
 els.btnSetup.addEventListener('click', () => send({ type: 'setup' }));
 els.btnStart.addEventListener('click', () => send({ type: 'startGame' }));
+els.btnBsStart.addEventListener('click', () => send({ type: 'startGame' }));
 els.btnNewRound.addEventListener('click', () => send({ type: 'newRound' }));
 els.btnRematch.addEventListener('click', () => send({ type: 'rematch' }));
+els.gameSidebar.addEventListener('click', (e) => {
+  const btn = e.target.closest('.game-btn');
+  if (!btn || btn.disabled) return;
+  send({ type: 'setGame', game: btn.dataset.game });
+});
+
+/* ---------- battleship ---------- */
+
+function resetBsLocal() {
+  state.bsFleet = null;
+  state.bsShots = null;
+  state.bsHits = new Set();
+  state.bsSunk = new Set();
+  state.bsPlacing = { ship: 0, dir: 0, shipKeys: [[], [], [], [], []] };
+  state.bsReady = false;
+}
+
+function bsCellsFor(shipIdx, r, c, dir, placed) {
+  const size = BS_SIZES[shipIdx];
+  const cells = [];
+  const keys = [];
+  for (let k = 0; k < size; k++) {
+    const rr = dir === 0 ? r + k : r;
+    const cc = dir === 0 ? c : c + k;
+    if (rr < 0 || rr > 9 || cc < 0 || cc > 9) return null;
+    keys.push(rr + ',' + cc);
+  }
+  if (keys.some(k => placed.some((keysArr) => keysArr.includes(k)))) return null;
+  return keys;
+}
+
+function renderBsSetup() {
+  const isBingo = state.room && state.room.game !== 'battleship';
+  if (!state.room || isBingo) return;
+  const placing = state.bsPlacing || (state.bsPlacing = { ship: 0, dir: 0, shipKeys: [[], [], [], [], []] });
+  els.arrangeBsStatus.textContent = state.bsReady ? 'Fleet ready' : 'Placing: ' + BS_NAMES[placing.ship] + ' (' + BS_SIZES[placing.ship] + ') - ' + (placing.dir === 0 ? 'horizontal' : 'vertical');
+
+  els.bsShipList.innerHTML = '';
+  BS_NAMES.forEach((name, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'bs-ship' + (i === placing.ship ? ' active' : '') + (placing.shipKeys[i].length ? ' done' : '');
+    b.textContent = name + ' (' + BS_SIZES[i] + ')';
+    b.disabled = state.bsReady;
+    b.addEventListener('click', () => {
+      if (state.bsReady) return;
+      placing.ship = i;
+      renderBsSetup();
+    });
+    els.bsShipList.appendChild(b);
+  });
+
+  els.bsFleetGrid.innerHTML = '';
+  for (let r = 0; r < 10; r++) {
+    for (let c = 0; c < 10; c++) {
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'cell bs-cell';
+      const key = r + ',' + c;
+      for (let i = 0; i < 5; i++) {
+        if (placing.shipKeys[i].includes(key)) {
+          const idx = placing.shipKeys[i].indexOf(key);
+          cell.textContent = BS_NAMES[i][0];
+          cell.classList.add('ship', 'ship-' + i + (idx === 0 ? ' head' : ''));
+        }
+      }
+      const preview = bsCellsFor(placing.ship, r, c, placing.dir, placing.shipKeys);
+      if (!state.bsReady && preview && preview.includes(key)) {
+        cell.classList.add('preview');
+        if (cell.textContent === '') cell.textContent = BS_NAMES[placing.ship][0];
+      }
+      cell.disabled = state.bsReady;
+      cell.addEventListener('click', () => {
+        if (state.bsReady) return;
+        const keys = bsCellsFor(placing.ship, r, c, placing.dir, placing.shipKeys);
+        if (!keys) { toast("Ships can't overlap or go off the board", 'err'); return; }
+        placing.shipKeys[placing.ship] = keys;
+        placing.ship = (placing.ship + 1) % 5;
+        let next = placing.ship;
+        while (placing.shipKeys[next].length && next !== (placing.ship - 1 + 5) % 5) next = (next + 1) % 5;
+        if (placing.shipKeys[placing.ship].length) placing.ship = next;
+        renderBsSetup();
+      });
+      els.bsFleetGrid.appendChild(cell);
+    }
+  }
+
+  const complete = placing.shipKeys.every(k => k.length);
+  els.btnBsReady.disabled = !complete || state.bsReady;
+}
+
+els.btnBsAuto.addEventListener('click', () => {
+  if (!state.bsPlacing) resetBsLocal();
+  const placing = state.bsPlacing;
+  placing.shipKeys = [[], [], [], [], []];
+  for (let i = 0; i < 5; i++) {
+    let placed = false;
+    for (let tries = 0; tries < 200 && !placed; tries++) {
+      const dir = Math.random() < 0.5 ? 0 : 1;
+      const size = BS_SIZES[i];
+      const r = Math.floor(Math.random() * (dir === 0 ? 10 : 10 - size + 1));
+      const c = Math.floor(Math.random() * (dir === 1 ? 10 : 10 - size + 1));
+      const keys = bsCellsFor(i, r, c, dir, placing.shipKeys);
+      if (keys) { placing.shipKeys[i] = keys; placed = true; }
+    }
+  }
+  renderBsSetup();
+});
+
+els.btnBsClear.addEventListener('click', () => {
+  if (!state.bsPlacing) resetBsLocal();
+  state.bsPlacing.shipKeys = [[], [], [], [], []];
+  state.bsPlacing.ship = 0;
+  renderBsSetup();
+});
+
+els.btnBsReady.addEventListener('click', () => {
+  if (!state.bsPlacing || !state.bsPlacing.shipKeys.every(k => k.length)) {
+    toast('Place all 5 ships first', 'err');
+    return;
+  }
+  const ships = state.bsPlacing.shipKeys.map((keys, i) => {
+    const first = keys[0].split(',');
+    const last = keys[keys.length - 1].split(',');
+    const dir = first[0] !== last[0] ? 1 : 0;
+    return { r: parseInt(first[0], 10), c: parseInt(first[1], 10), dir };
+  });
+  state.bsReady = true;
+  send({ type: 'placeFleet', ships });
+  toast('Fleet deployed');
+});
+
+function renderBsBattle() {
+  const isBingo = state.room && state.room.game !== 'battleship';
+  if (!state.room || isBingo || state.room.phase !== 'playing') return;
+
+  els.bsOwn.innerHTML = '';
+  for (let r = 0; r < 10; r++) {
+    for (let c = 0; c < 10; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'cell bs-cell';
+      const key = r + ',' + c;
+      const shipIdx = state.bsFleet && state.bsFleet[r][c];
+      if (shipIdx !== null && shipIdx !== undefined) {
+        cell.textContent = BS_NAMES[shipIdx][0];
+        cell.classList.add('ship', 'ship-' + shipIdx);
+      }
+      if (state.bsHits.has(key)) cell.classList.add('hit');
+      els.bsOwn.appendChild(cell);
+    }
+  }
+
+  els.bsTracking.innerHTML = '';
+  for (let r = 0; r < 10; r++) {
+    for (let c = 0; c < 10; c++) {
+      const cell = document.createElement('button');
+      cell.type = 'button';
+      cell.className = 'cell bs-cell';
+      const key = r + ',' + c;
+      const shot = state.bsShots && state.bsShots[r][c];
+      if (shot === 'hit') {
+        cell.classList.add('hit');
+        cell.textContent = 'X';
+      } else if (shot === 'miss') {
+        cell.classList.add('miss');
+        cell.textContent = '·';
+      }
+      const myTurn = state.room.turnId === state.me.id && !state.room.claimWindow;
+      cell.disabled = !myTurn || !!shot;
+      if (myTurn && !shot) cell.classList.add('firable');
+      cell.addEventListener('click', () => send({ type: 'fire', r, c }));
+      els.bsTracking.appendChild(cell);
+    }
+  }
+}
+
+function handleShot(msg) {
+  if (!state.room) return;
+  const key = msg.r + ',' + msg.c;
+  if (msg.myShot) {
+    if (state.bsShots) state.bsShots[msg.r][msg.c] = msg.result;
+    if (msg.sunk) {
+      toast('You sank the ' + msg.sunk.name + '!', 'warn');
+      if (state.bsShots) for (const [rr, cc] of msg.sunk.cells) state.bsShots[rr][cc] = 'hit';
+      state.bsSunk.add(msg.sunk.idx);
+      sClaim();
+    } else {
+      toast(msg.result === 'hit' ? 'Hit!' : 'Miss', msg.result === 'hit' ? 'warn' : '');
+      sBall();
+    }
+  } else {
+    if (msg.result === 'hit') {
+      state.bsHits.add(key);
+      if (msg.sunk) toast('Your ' + msg.sunk.name + ' was sunk!', 'warn');
+      else toast('Your fleet was hit!', 'warn');
+      sErr();
+    } else {
+      toast('The enemy fired - miss', '');
+    }
+  }
+  if (msg.turnId && msg.turnId !== state.room.turnId) state.turnStart = Date.now();
+  state.room.turnId = msg.turnId;
+  renderTurnStatus();
+  renderBsBattle();
+}
 
 /* ---------- turn-based elimination ---------- */
 
 function renderTurnStatus() {
   if (!state.room || !state.me) return;
+  const isBingo = state.room.game !== 'battleship';
+  const statusEl = isBingo ? els.turnStatus : els.bsTurnStatus;
+  const clockEl = isBingo ? els.turnClock : els.bsTurnClock;
   const isMe = state.room.turnId === state.me.id;
   const turnPlayer = state.room.players.find(p => p.id === state.room.turnId);
   if (state.room.phase === 'playing') {
-    els.turnStatus.textContent = isMe
-      ? 'Your turn - pick a number to eliminate!'
-      : 'Waiting for ' + (turnPlayer ? turnPlayer.name : '...') + ' to eliminate a number...';
+    statusEl.textContent = isMe
+      ? (isBingo ? 'Your turn - pick a number to eliminate!' : 'Your turn - fire on enemy waters!')
+      : 'Waiting for ' + (turnPlayer ? turnPlayer.name : '...') + (isBingo ? ' to eliminate a number...' : ' to fire...');
   } else {
-    els.turnStatus.textContent = 'Waiting for the game to start...';
+    statusEl.textContent = 'Waiting for the game to start...';
   }
-  els.turnStatus.classList.toggle('mine', isMe && state.room.phase === 'playing');
+  statusEl.classList.toggle('mine', isMe && state.room.phase === 'playing');
+  clockEl.classList.toggle('urgent', false);
   updateTurnClock();
-  renderElimPalette();
+  if (isBingo) renderElimPalette();
 }
 
 function updateTurnClock() {
   if (!state.room || !state.me) {
     els.turnClock.textContent = '';
+    els.bsTurnClock.textContent = '';
     return;
   }
+  const isBingo = state.room.game !== 'battleship';
+  const clockEl = isBingo ? els.turnClock : els.bsTurnClock;
   const inPlay = state.room.phase === 'playing' && !state.room.claimWindow;
   if (!inPlay || !state.room.turnId) {
-    els.turnClock.textContent = '';
+    clockEl.textContent = '';
     return;
   }
   const left = Math.max(0, Math.ceil(10 - (Date.now() - state.turnStart) / 1000));
-  els.turnClock.textContent = left + 's';
-  els.turnClock.classList.toggle('urgent', left <= 1);
+  clockEl.textContent = left + 's';
+  clockEl.classList.toggle('urgent', left <= 1);
 }
 
 setInterval(() => {
-  if (!state.room || state.room.phase !== 'playing') return;
-  if (state.room.game === 'battleship') { updateBsClock(); return; }
-  if (state.room.claimWindow) return;
+  if (!state.room || state.room.phase !== 'playing' || state.room.claimWindow) return;
   updateTurnClock();
 }, 250);
 
@@ -982,8 +955,8 @@ function renderElimPalette() {
 function create() {
   const name = els.homeName.value.trim();
   if (!name) { toast('Enter a name', 'err'); return; }
-  save({ code: '', name, roomName: els.homeRoomName.value.trim(), game: state.selectedGame });
-  send({ type: 'createRoom', name, roomName: els.homeRoomName.value.trim(), game: state.selectedGame });
+  save({ code: '', name, roomName: els.homeRoomName.value.trim() });
+  send({ type: 'createRoom', name, roomName: els.homeRoomName.value.trim() });
 }
 
 function join() {
@@ -1201,35 +1174,12 @@ window.addEventListener('resize', () => {
 
 /* ---------- init ---------- */
 
-els.gameCards.forEach(card => {
-  card.addEventListener('click', () => {
-    if (card.disabled) return;
-    state.selectedGame = card.dataset.game;
-    els.gameCards.forEach(c => c.classList.toggle('selected', c === card));
-    const bs = state.selectedGame === 'battleship';
-    els.rulesBingo.classList.toggle('hidden', bs);
-    els.rulesBattleship.classList.toggle('hidden', !bs);
-    els.rulesGameName.textContent = bs ? 'Battleship' : 'Bingo';
-  });
-});
-
 const saved = loadSaved();
 if (saved) {
   els.homeName.value = saved.name;
   els.homeName2.value = saved.name;
   if (saved.roomName) els.homeRoomName.value = saved.roomName;
   if (saved.code) els.homeCode.value = saved.code;
-  if (saved.game) {
-    const card = els.gameCards.find(c => c.dataset.game === saved.game);
-    if (card && !card.disabled) {
-      state.selectedGame = saved.game;
-      card.classList.add('selected');
-      const bs = saved.game === 'battleship';
-      els.rulesBingo.classList.toggle('hidden', bs);
-      els.rulesBattleship.classList.toggle('hidden', !bs);
-      els.rulesGameName.textContent = bs ? 'Battleship' : 'Bingo';
-    }
-  }
 }
 
 spawnFloaters();
